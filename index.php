@@ -88,6 +88,7 @@ const ctx = document.getElementById('powerChart').getContext('2d');
 
 const POWER_COLOR = '#1f77b4';
 const LAP_COLOR   = 'rgba(0,0,0,0.35)';
+const LAP_AVG_COLOR = '#174a7e';
 
 let rawData = [];
 let lapMarkers = [];
@@ -102,10 +103,7 @@ const chart = new Chart(ctx, {
             legend: { display: false },
             zoom: {
                 zoom: {
-                    drag: {
-                        enabled: true,
-                        backgroundColor: 'rgba(0,0,0,0.1)'
-                    },
+                    drag: { enabled: true, backgroundColor: 'rgba(0,0,0,0.1)' },
                     mode: 'x'
                 }
             }
@@ -171,22 +169,40 @@ function redraw() {
     if (!rawData.length) return;
 
     const windowSize = +smoothingSelect.value;
-    const tolValue = toleranceSelect.value;
-    const tolerance = tolValue === 'none' ? Infinity : (+tolValue / 100);
-    const zeroRun   = +zeroSelect.value;
+    const tolVal = toleranceSelect.value;
+    const tolerance = tolVal === 'none' ? Infinity : (+tolVal / 100);
+    const zeroRun = +zeroSelect.value;
 
     const filtered = filterZeroRuns(rawData, zeroRun);
     const smoothed = smoothPerLapSmart(filtered, lapMarkers, windowSize, tolerance);
 
-    chart.data.datasets = [{
+    chart.data.datasets = [];
+
+    // --- linia mocy ---
+    chart.data.datasets.push({
         data: smoothed,
         borderColor: POWER_COLOR,
         borderWidth: 2,
         pointRadius: 0
-    }];
+    });
 
+    // --- średnia per Lap ---
+    const bounds = [...lapMarkers.map(l => l.x), Infinity];
+    let lapIndex = 0;
+    let buffer = [];
+
+    for (let p of smoothed) {
+        if (p.x >= bounds[lapIndex + 1]) {
+            addLapAverageLine(buffer, bounds[lapIndex], bounds[lapIndex + 1]);
+            buffer = [];
+            lapIndex++;
+        }
+        buffer.push(p);
+    }
+    addLapAverageLine(buffer, bounds[lapIndex], bounds[lapIndex + 1]);
+
+    // --- linie Lap ---
     const maxY = Math.max(...smoothed.map(p => p.y));
-
     lapMarkers.forEach(l => {
         chart.data.datasets.push({
             data: [{ x: l.x, y: 0 }, { x: l.x, y: maxY }],
@@ -199,6 +215,24 @@ function redraw() {
     });
 
     chart.update();
+}
+
+function addLapAverageLine(points, startX, endX) {
+    if (!points.length) return;
+
+    const avg = points.reduce((s, p) => s + p.y, 0) / points.length;
+
+    chart.data.datasets.push({
+        data: [
+            { x: startX, y: avg },
+            { x: endX === Infinity ? points[points.length - 1].x : endX, y: avg }
+        ],
+        type: 'line',
+        borderColor: LAP_AVG_COLOR,
+        borderDash: [8, 4],
+        borderWidth: 1.5,
+        pointRadius: 0
+    });
 }
 
 // ------------------------------------------------------------
@@ -266,7 +300,6 @@ function smoothLapSmart(lap, windowSize, tolerance) {
 
             const avg = slice.reduce((a, p) => a + p.y, 0) / slice.length;
             const diff = Math.abs(avg - ref) / Math.max(avg, ref);
-
             if (diff <= tolerance) candidates.push(avg);
         }
 
