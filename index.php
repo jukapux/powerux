@@ -8,23 +8,11 @@
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 30px;
-        }
-        .controls {
-            margin-bottom: 12px;
-        }
-        label {
-            margin-right: 15px;
-        }
-        button {
-            margin-left: 15px;
-            padding: 4px 10px;
-        }
-        canvas {
-            max-width: 100%;
-        }
+        body { font-family: Arial, sans-serif; margin: 30px; }
+        .controls { margin-bottom: 12px; }
+        label { margin-right: 15px; }
+        button { margin-left: 15px; padding: 4px 10px; }
+        canvas { max-width: 100%; }
     </style>
 </head>
 <body>
@@ -34,6 +22,47 @@
 <div class="controls">
     <input type="file" id="fileInput" accept=".tcx">
 
+    <label>
+        Wygładzanie mocy:
+        <select id="smoothingSelect">
+            <option value="1">Brak</option>
+            <option value="3" selected>3 s</option>
+            <option value="10">10 s</option>
+            <option value="30">30 s</option>
+            <option value="60">60 s</option>
+            <option value="90">90 s</option>
+            <option value="120">120 s</option>
+        </select>
+    </label>
+
+    <label>
+        Tolerancja:
+        <select id="toleranceSelect">
+            <option value="none">brak</option>
+            <option value="10">10 %</option>
+            <option value="20">20 %</option>
+            <option value="30" selected>30 %</option>
+            <option value="40">40 %</option>
+            <option value="50">50 %</option>
+            <option value="60">60 %</option>
+            <option value="70">70 %</option>
+            <option value="80">80 %</option>
+            <option value="90">90 %</option>
+        </select>
+    </label>
+
+    <label>
+        Ignoruj 0 W:
+        <select id="zeroSelect">
+            <option value="0">nie ignoruj</option>
+            <option value="1">≥1</option>
+            <option value="2">≥2</option>
+            <option value="3" selected>≥3</option>
+        </select>
+    </label>
+</div>
+
+<div class="controls">
     <label><input type="checkbox" id="showPower" checked> Moc</label>
     <label><input type="checkbox" id="showHR" checked> Tętno</label>
     <label><input type="checkbox" id="showCad" checked> Kadencja</label>
@@ -56,7 +85,7 @@ const COLORS = {
     lapAvgFill: 'rgba(120,120,120,0.15)'
 };
 
-let dataAll = [];
+let rawData = [];
 let lapMarkers = [];
 let lapAverages = [];
 
@@ -77,23 +106,27 @@ const chart = new Chart(ctx, {
             tooltip: {
                 callbacks: {
                     title: () => '',
-                    label: ctx => {
-                        const p = ctx.raw;
-                        const labels = [];
-                        if (document.getElementById('showPower').checked && p.power != null)
-                            labels.push(`Moc: ${Math.round(p.power)} W`);
-                        if (document.getElementById('showHR').checked && p.hr != null)
-                            labels.push(`Tętno: ${p.hr} bpm`);
-                        if (document.getElementById('showCad').checked && p.cad != null)
-                            labels.push(`Kadencja: ${p.cad} rpm`);
-                        if (document.getElementById('showSpeed').checked && p.speed != null)
-                            labels.push(`Prędkość: ${p.speed.toFixed(1)} km/h`);
+                    label: c => {
+                        const p = c.raw;
+                        const out = [];
+
+                        if (show('showPower') && p.power != null)
+                            out.push(`Moc: ${Math.round(p.power)} W`);
+
+                        if (show('showHR') && p.hr != null)
+                            out.push(`Tętno: ${p.hr} bpm`);
+
+                        if (show('showCad') && p.cad != null)
+                            out.push(`Kadencja: ${p.cad} rpm`);
+
+                        if (show('showSpeed') && p.speed != null)
+                            out.push(`Prędkość: ${p.speed.toFixed(1)} km/h`);
 
                         const lap = lapAverages.find(l => p.x >= l.start && p.x < l.end);
-                        if (lap && document.getElementById('showPower').checked)
-                            labels.push(`Śr. Lap: ${Math.round(lap.avg)} W`);
+                        if (lap && show('showPower'))
+                            out.push(`Śr. Lap: ${Math.round(lap.avg)} W`);
 
-                        return labels;
+                        return out;
                     }
                 }
             }
@@ -105,8 +138,10 @@ const chart = new Chart(ctx, {
     }
 });
 
+const show = id => document.getElementById(id).checked;
+
 document.getElementById('resetZoom').onclick = () => chart.resetZoom();
-document.querySelectorAll('input[type=checkbox]').forEach(cb => cb.onchange = redraw);
+document.querySelectorAll('input, select').forEach(el => el.onchange = redraw);
 document.getElementById('fileInput').onchange = loadTCX;
 
 // ------------------------------------------------------------
@@ -125,7 +160,7 @@ function loadTCX(e) {
 
         const tps = xml.getElementsByTagName("Trackpoint");
         let start = null;
-        dataAll = [];
+        rawData = [];
 
         for (let tp of tps) {
             const t = tp.getElementsByTagName("Time")[0];
@@ -134,17 +169,15 @@ function loadTCX(e) {
             if (!start) start = time;
             const x = (time - start) / 1000;
 
-            const watts = tp.getElementsByTagName("ns3:Watts")[0];
-            const hr = tp.getElementsByTagName("HeartRateBpm")[0]?.getElementsByTagName("Value")[0];
-            const cad = tp.getElementsByTagName("Cadence")[0];
-            const speed = tp.getElementsByTagName("ns3:Speed")[0];
-
-            dataAll.push({
+            rawData.push({
                 x,
-                power: watts ? +watts.textContent : null,
-                hr: hr ? +hr.textContent : null,
-                cad: cad ? +cad.textContent : null,
-                speed: speed ? (+speed.textContent * 3.6) : null
+                power: +tp.getElementsByTagName("ns3:Watts")[0]?.textContent || null,
+                hr: +tp.getElementsByTagName("HeartRateBpm")[0]
+                        ?.getElementsByTagName("Value")[0]?.textContent || null,
+                cad: +tp.getElementsByTagName("Cadence")[0]?.textContent || null,
+                speed: tp.getElementsByTagName("ns3:Speed")[0]
+                        ? +tp.getElementsByTagName("ns3:Speed")[0].textContent * 3.6
+                        : null
             });
         }
 
@@ -160,34 +193,36 @@ function loadTCX(e) {
 function redraw() {
     chart.data.datasets = [];
     lapAverages = [];
+    if (!rawData.length) return;
 
-    if (!dataAll.length) return;
+    const windowSize = +document.getElementById('smoothingSelect').value;
+    const tolVal = document.getElementById('toleranceSelect').value;
+    const tolerance = tolVal === 'none' ? Infinity : (+tolVal / 100);
+    const zeroRun = +document.getElementById('zeroSelect').value;
 
-    const show = id => document.getElementById(id).checked;
+    const filtered = filterZeroRuns(rawData, zeroRun);
+    const smoothedPower = smoothPowerPerLap(filtered, lapMarkers, windowSize, tolerance);
 
     if (show('showPower')) {
         chart.data.datasets.push({
-            data: dataAll.map(p => ({ x: p.x, y: p.power, ...p })),
+            data: smoothedPower,
             borderColor: COLORS.power,
             borderWidth: 2,
             pointRadius: 0
         });
-        addLapAverages();
+        drawLapAverages(smoothedPower);
     }
 
-    if (show('showHR'))
-        addSimpleDataset('hr', COLORS.hr);
-    if (show('showCad'))
-        addSimpleDataset('cad', COLORS.cad);
-    if (show('showSpeed'))
-        addSimpleDataset('speed', COLORS.speed);
+    if (show('showHR')) addSimple('hr', COLORS.hr);
+    if (show('showCad')) addSimple('cad', COLORS.cad);
+    if (show('showSpeed')) addSimple('speed', COLORS.speed);
 
     chart.update();
 }
 
-function addSimpleDataset(key, color) {
+function addSimple(key, color) {
     chart.data.datasets.push({
-        data: dataAll.filter(p => p[key] != null)
+        data: rawData.filter(p => p[key] != null)
             .map(p => ({ x: p.x, y: p[key], ...p })),
         borderColor: color,
         borderWidth: 1.5,
@@ -195,33 +230,33 @@ function addSimpleDataset(key, color) {
     });
 }
 
-function addLapAverages() {
+// ------------------------------------------------------------
+// ŚREDNIA LAP
+// ------------------------------------------------------------
+function drawLapAverages(points) {
     const bounds = [...lapMarkers, Infinity];
     let buf = [], i = 0;
 
-    for (let p of dataAll) {
+    for (let p of points) {
         if (p.x >= bounds[i + 1]) {
-            drawLapAvg(buf, bounds[i], bounds[i + 1]);
+            renderLapAvg(buf, bounds[i], bounds[i + 1]);
             buf = [];
             i++;
         }
-        if (p.power != null) buf.push(p);
+        buf.push(p);
     }
-    drawLapAvg(buf, bounds[i], bounds[i + 1]);
+    renderLapAvg(buf, bounds[i], bounds[i + 1]);
 }
 
-function drawLapAvg(points, start, end) {
+function renderLapAvg(points, start, end) {
     if (!points.length) return;
-    const avg = points.reduce((s, p) => s + p.power, 0) / points.length;
+    const avg = points.reduce((s, p) => s + p.y, 0) / points.length;
     const realEnd = end === Infinity ? points[points.length - 1].x : end;
 
     lapAverages.push({ start, end: realEnd, avg });
 
     chart.data.datasets.push({
-        data: [
-            { x: start, y: avg },
-            { x: realEnd, y: avg }
-        ],
+        data: [{ x: start, y: avg }, { x: realEnd, y: avg }],
         type: 'line',
         borderColor: COLORS.lapAvgLine,
         backgroundColor: COLORS.lapAvgFill,
@@ -229,6 +264,92 @@ function drawLapAvg(points, start, end) {
         borderWidth: 2,
         pointRadius: 0
     });
+}
+
+// ------------------------------------------------------------
+// FILTR 0 W
+// ------------------------------------------------------------
+function filterZeroRuns(data, minRun) {
+    if (minRun === 0) return data;
+    let out = [], run = [];
+
+    for (let p of data) {
+        if (p.power === 0) run.push(p);
+        else {
+            if (run.length && run.length < minRun) out.push(...run);
+            run = [];
+            out.push(p);
+        }
+    }
+    if (run.length && run.length < minRun) out.push(...run);
+    return out;
+}
+
+// ------------------------------------------------------------
+// INTELIGENTNE WYGŁADZANIE MOCY
+// ------------------------------------------------------------
+function smoothPowerPerLap(data, laps, windowSize, tolerance) {
+    if (windowSize <= 1) {
+        return data.filter(p => p.power != null)
+            .map(p => ({ x: p.x, y: p.power, ...p }));
+    }
+
+    const bounds = [...laps, Infinity];
+    let out = [], lap = [], i = 0;
+
+    for (let p of data) {
+        if (p.x >= bounds[i + 1]) {
+            out.push(...smoothLap(lap, windowSize, tolerance));
+            lap = [];
+            i++;
+        }
+        if (p.power != null) lap.push(p);
+    }
+    out.push(...smoothLap(lap, windowSize, tolerance));
+    return out;
+}
+
+function smoothLap(lap, windowSize, tolerance) {
+    let res = [];
+
+    for (let i = 0; i < lap.length; i++) {
+        const ref = median([
+            lap[i - 1]?.power,
+            lap[i]?.power,
+            lap[i + 1]?.power
+        ].filter(v => v != null));
+
+        let candidates = [];
+
+        for (let back = windowSize; back >= 0; back--) {
+            const fwd = windowSize - back;
+            const s = Math.max(0, i - back);
+            const e = Math.min(lap.length, i + fwd + 1);
+            const slice = lap.slice(s, e);
+
+            if (!slice.length) continue;
+
+            const avg = slice.reduce((a, p) => a + p.power, 0) / slice.length;
+            const diff = Math.abs(avg - ref) / Math.max(avg, ref);
+
+            if (diff <= tolerance) candidates.push(avg);
+        }
+
+        res.push({
+            x: lap[i].x,
+            y: candidates.length
+                ? candidates.reduce((a, v) => a + v, 0) / candidates.length
+                : lap[i].power,
+            ...lap[i]
+        });
+    }
+    return res;
+}
+
+function median(a) {
+    a.sort((x, y) => x - y);
+    const m = Math.floor(a.length / 2);
+    return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
 }
 </script>
 
