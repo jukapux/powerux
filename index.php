@@ -157,9 +157,9 @@ document.getElementById('resetZoom').onclick = () => chart.resetZoom();
 document.querySelectorAll('input, select').forEach(el => el.onchange = redraw);
 document.getElementById('fileInput').onchange = loadTCX;
 
-// ------------------------------------------------------------
-// TCX
-// ------------------------------------------------------------
+// ============================================================
+// WCZYTYWANIE TCX
+// ============================================================
 function loadTCX(e) {
     const file = e.target.files[0];
     if (!file) return;
@@ -178,6 +178,7 @@ function loadTCX(e) {
         for (let tp of tps) {
             const t = tp.getElementsByTagName("Time")[0];
             if (!t) continue;
+
             const time = new Date(t.textContent);
             if (!start) start = time;
 
@@ -199,9 +200,9 @@ function loadTCX(e) {
     reader.readAsText(file);
 }
 
-// ------------------------------------------------------------
+// ============================================================
 // RYSOWANIE
-// ------------------------------------------------------------
+// ============================================================
 function redraw() {
     chart.data.datasets = [];
     lapAverages = [];
@@ -244,9 +245,9 @@ function addSimple(key, color, axis) {
     });
 }
 
-// ------------------------------------------------------------
+// ============================================================
 // ŚREDNIA LAP
-// ------------------------------------------------------------
+// ============================================================
 function drawLapAverages(points) {
     const bounds = [...lapMarkers, Infinity];
     let buf = [], i = 0;
@@ -264,6 +265,7 @@ function drawLapAverages(points) {
 
 function renderLapAvg(points, start, end) {
     if (!points.length) return;
+
     const avg = points.reduce((s, p) => s + p.y, 0) / points.length;
     const realEnd = end === Infinity ? points[points.length - 1].x : end;
 
@@ -281,9 +283,9 @@ function renderLapAvg(points, start, end) {
     });
 }
 
-// ------------------------------------------------------------
+// ============================================================
 // FILTR 0 W
-// ------------------------------------------------------------
+// ============================================================
 function filterZeroRuns(data, minRun) {
     if (minRun === 0) return data;
     let out = [], run = [];
@@ -300,9 +302,9 @@ function filterZeroRuns(data, minRun) {
     return out;
 }
 
-// ------------------------------------------------------------
-// INTELIGENTNE WYGŁADZANIE MOCY
-// ------------------------------------------------------------
+// ============================================================
+// INTELIGENTNE WYGŁADZANIE MOCY (NAPRAWIONA TOLERANCJA)
+// ============================================================
 function smoothPowerPerLap(data, laps, windowSize, tolerance) {
     if (windowSize <= 1) {
         return data.filter(p => p.power != null)
@@ -328,12 +330,13 @@ function smoothLap(lap, windowSize, tolerance) {
     let res = [];
 
     for (let i = 0; i < lap.length; i++) {
-        const ref = median([
+        const refValues = [
             lap[i - 1]?.power,
             lap[i]?.power,
             lap[i + 1]?.power
-        ].filter(v => v != null));
+        ].filter(v => typeof v === 'number' && isFinite(v));
 
+        const ref = refValues.length ? median(refValues) : null;
         let candidates = [];
 
         for (let back = windowSize; back >= 0; back--) {
@@ -344,9 +347,13 @@ function smoothLap(lap, windowSize, tolerance) {
             if (!slice.length) continue;
 
             const avg = slice.reduce((a, p) => a + p.power, 0) / slice.length;
-            const diff = Math.abs(avg - ref) / Math.max(avg, ref);
 
-            if (diff <= tolerance) candidates.push(avg);
+            if (tolerance === Infinity || ref === null || ref <= 0) {
+                candidates.push(avg);
+            } else {
+                const diff = Math.abs(avg - ref) / Math.max(avg, ref);
+                if (diff <= tolerance) candidates.push(avg);
+            }
         }
 
         res.push({
