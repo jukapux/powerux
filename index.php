@@ -53,7 +53,7 @@
         <select id="hrSmooth">
             <option value="1">Brak</option>
             <option value="3">3 s</option>
-            <option value="10">10 s</option>
+            <option value="10" selected>10 s</option>
             <option value="30">30 s</option>
         </select>
     </label>
@@ -72,8 +72,8 @@
 <div class="controls">
     <label><input type="checkbox" id="showPower" checked> Moc</label>
     <label><input type="checkbox" id="showHR" checked> Tętno</label>
-    <label><input type="checkbox" id="showCad" checked> Kadencja</label>
-    <label><input type="checkbox" id="showSpeed" checked> Prędkość</label>
+    <label><input type="checkbox" id="showCad"> Kadencja</label>
+    <label><input type="checkbox" id="showSpeed"> Prędkość</label>
 
     <button id="resetZoom">Zeruj przybliżenie</button>
 </div>
@@ -152,9 +152,7 @@ document.getElementById('resetZoom').onclick = () => chart.resetZoom();
 document.querySelectorAll('input, select').forEach(el => el.onchange = redraw);
 document.getElementById('fileInput').onchange = loadTCX;
 
-// ============================================================
-// TCX
-// ============================================================
+/* ---------- TCX ---------- */
 function loadTCX(e) {
     const file = e.target.files[0];
     if (!file) return;
@@ -195,9 +193,7 @@ function loadTCX(e) {
     reader.readAsText(file);
 }
 
-// ============================================================
-// RYSOWANIE
-// ============================================================
+/* ---------- RYSOWANIE ---------- */
 function redraw() {
     chart.data.datasets = [];
     lapAverages = [];
@@ -240,6 +236,7 @@ function redraw() {
     chart.update();
 }
 
+/* ---------- POMOCNICZE ---------- */
 function addSimple(key, color, axis) {
     chart.data.datasets.push({
         data: rawData.filter(p => p[key] != null)
@@ -251,75 +248,25 @@ function addSimple(key, color, axis) {
     });
 }
 
-// ============================================================
-// PROSTE WYGŁADZANIE (HR)
-// ============================================================
 function smoothSimple(data, key, windowSize) {
     if (windowSize <= 1) {
         return data.filter(p => p[key] != null)
             .map(p => ({ x: p.x, y: p[key], ...p }));
     }
 
-    let out = [];
-    let buf = [];
-
+    let out = [], buf = [];
     for (let p of data) {
         if (p[key] == null) continue;
-
         buf.push(p[key]);
         if (buf.length > windowSize) buf.shift();
-
-        const avg = buf.reduce((a, v) => a + v, 0) / buf.length;
-        out.push({ x: p.x, y: avg, ...p });
+        out.push({ x: p.x, y: buf.reduce((a,v)=>a+v,0)/buf.length, ...p });
     }
     return out;
 }
 
-// ============================================================
-// ŚREDNIA LAP
-// ============================================================
-function drawLapAverages(points) {
-    const bounds = [...lapMarkers, Infinity];
-    let buf = [], i = 0;
-
-    for (let p of points) {
-        if (p.x >= bounds[i + 1]) {
-            renderLapAvg(buf, bounds[i], bounds[i + 1]);
-            buf = [];
-            i++;
-        }
-        buf.push(p);
-    }
-    renderLapAvg(buf, bounds[i], bounds[i + 1]);
-}
-
-function renderLapAvg(points, start, end) {
-    if (!points.length) return;
-
-    const avg = points.reduce((s, p) => s + p.y, 0) / points.length;
-    const realEnd = end === Infinity ? points[points.length - 1].x : end;
-
-    lapAverages.push({ start, end: realEnd, avg });
-
-    chart.data.datasets.push({
-        data: [{ x: start, y: avg }, { x: realEnd, y: avg }],
-        type: 'line',
-        borderColor: COLORS.lapAvgLine,
-        backgroundColor: COLORS.lapAvgFill,
-        fill: 'origin',
-        borderWidth: 2,
-        pointRadius: 0,
-        yAxisID: 'yPower'
-    });
-}
-
-// ============================================================
-// FILTR 0 W
-// ============================================================
 function filterZeroRuns(data, minRun) {
     if (minRun === 0) return data;
     let out = [], run = [];
-
     for (let p of data) {
         if (p.power === 0) run.push(p);
         else {
@@ -332,9 +279,7 @@ function filterZeroRuns(data, minRun) {
     return out;
 }
 
-// ============================================================
-// INTELIGENTNE WYGŁADZANIE MOCY
-// ============================================================
+/* ---------- MOC ---------- */
 function smoothPowerPerLap(data, laps, windowSize, tolerance) {
     if (windowSize <= 1) {
         return data.filter(p => p.power != null)
@@ -358,7 +303,6 @@ function smoothPowerPerLap(data, laps, windowSize, tolerance) {
 
 function smoothLap(lap, windowSize, tolerance) {
     let res = [];
-
     for (let i = 0; i < lap.length; i++) {
         const ref = lap[i].power;
         let candidates = [];
@@ -370,12 +314,11 @@ function smoothLap(lap, windowSize, tolerance) {
             const slice = lap.slice(s, e);
             if (!slice.length) continue;
 
-            const avg = slice.reduce((a, p) => a + p.power, 0) / slice.length;
-
+            const avg = slice.reduce((a,p)=>a+p.power,0)/slice.length;
             if (tolerance === Infinity || ref == null || ref <= 0) {
                 candidates.push(avg);
             } else {
-                const diff = Math.abs(avg - ref) / Math.max(avg, ref);
+                const diff = Math.abs(avg-ref)/Math.max(avg,ref);
                 if (diff <= tolerance) candidates.push(avg);
             }
         }
@@ -383,12 +326,46 @@ function smoothLap(lap, windowSize, tolerance) {
         res.push({
             x: lap[i].x,
             y: candidates.length
-                ? candidates.reduce((a, v) => a + v, 0) / candidates.length
+                ? candidates.reduce((a,v)=>a+v,0)/candidates.length
                 : ref,
             ...lap[i]
         });
     }
     return res;
+}
+
+/* ---------- LAP AVG ---------- */
+function drawLapAverages(points) {
+    const bounds = [...lapMarkers, Infinity];
+    let buf = [], i = 0;
+    for (let p of points) {
+        if (p.x >= bounds[i + 1]) {
+            renderLapAvg(buf, bounds[i], bounds[i + 1]);
+            buf = [];
+            i++;
+        }
+        buf.push(p);
+    }
+    renderLapAvg(buf, bounds[i], bounds[i + 1]);
+}
+
+function renderLapAvg(points, start, end) {
+    if (!points.length) return;
+    const avg = points.reduce((s,p)=>s+p.y,0)/points.length;
+    const realEnd = end === Infinity ? points[points.length-1].x : end;
+
+    lapAverages.push({ start, end: realEnd, avg });
+
+    chart.data.datasets.push({
+        data: [{x:start,y:avg},{x:realEnd,y:avg}],
+        type: 'line',
+        borderColor: COLORS.lapAvgLine,
+        backgroundColor: COLORS.lapAvgFill,
+        fill: 'origin',
+        borderWidth: 2,
+        pointRadius: 0,
+        yAxisID: 'yPower'
+    });
 }
 </script>
 
