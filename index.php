@@ -330,13 +330,7 @@ function smoothLap(lap, windowSize, tolerance) {
     let res = [];
 
     for (let i = 0; i < lap.length; i++) {
-        const refValues = [
-            lap[i - 1]?.power,
-            lap[i]?.power,
-            lap[i + 1]?.power
-        ].filter(v => typeof v === 'number' && isFinite(v));
-
-        const ref = refValues.length ? median(refValues) : null;
+        const ref = lap[i].power; // ⭐ KLUCZOWA ZMIANA ⭐
         let candidates = [];
 
         for (let back = windowSize; back >= 0; back--) {
@@ -348,11 +342,13 @@ function smoothLap(lap, windowSize, tolerance) {
 
             const avg = slice.reduce((a, p) => a + p.power, 0) / slice.length;
 
-            if (tolerance === Infinity || ref === null || ref <= 0) {
+            if (tolerance === Infinity || ref == null || ref <= 0) {
                 candidates.push(avg);
             } else {
                 const diff = Math.abs(avg - ref) / Math.max(avg, ref);
-                if (diff <= tolerance) candidates.push(avg);
+                if (diff <= tolerance) {
+                    candidates.push(avg);
+                }
             }
         }
 
@@ -360,12 +356,13 @@ function smoothLap(lap, windowSize, tolerance) {
             x: lap[i].x,
             y: candidates.length
                 ? candidates.reduce((a, v) => a + v, 0) / candidates.length
-                : lap[i].power,
+                : ref,
             ...lap[i]
         });
     }
     return res;
 }
+
 
 function median(a) {
     a.sort((x, y) => x - y);
