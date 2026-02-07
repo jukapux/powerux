@@ -2,7 +2,7 @@
 <html lang="pl">
 <head>
     <meta charset="UTF-8">
-    <title>Analiza mocy – TCX (Forward smoothing per Lap)</title>
+    <title>Analiza mocy – TCX (Inteligentne wygładzanie)</title>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
@@ -17,6 +17,9 @@
         canvas {
             max-width: 100%;
         }
+        label {
+            margin-left: 20px;
+        }
     </style>
 </head>
 <body>
@@ -26,7 +29,7 @@
 <div class="controls">
     <input type="file" id="fileInput" accept=".tcx">
 
-    <label style="margin-left:20px;">
+    <label>
         Wygładzanie:
         <select id="smoothingSelect">
             <option value="1">Brak</option>
@@ -38,6 +41,21 @@
             <option value="120">120 s</option>
         </select>
     </label>
+
+    <label>
+        Tolerancja:
+        <select id="toleranceSelect">
+            <option value="10">10 %</option>
+            <option value="20">20 %</option>
+            <option value="30" selected>30 %</option>
+            <option value="40">40 %</option>
+            <option value="50">50 %</option>
+            <option value="60">60 %</option>
+            <option value="70">70 %</option>
+            <option value="80">80 %</option>
+            <option value="90">90 %</option>
+        </select>
+    </label>
 </div>
 
 <canvas id="powerChart"></canvas>
@@ -45,139 +63,103 @@
 <script>
 const fileInput = document.getElementById('fileInput');
 const smoothingSelect = document.getElementById('smoothingSelect');
+const toleranceSelect = document.getElementById('toleranceSelect');
 const ctx = document.getElementById('powerChart').getContext('2d');
+
+const POWER_COLOR = '#1f77b4';
+const LAP_COLOR   = 'rgba(0,0,0,0.35)';
 
 let rawData = [];
 let lapMarkers = [];
-
-const POWER_COLOR = '#1f77b4';          // 🔵 linia mocy
-const LAP_COLOR   = 'rgba(0,0,0,0.35)'; // ⚪ linie LAP
 
 let chart = new Chart(ctx, {
     type: 'line',
     data: { datasets: [] },
     options: {
         responsive: true,
-        interaction: {
-            mode: 'index',
-            intersect: false
-        },
-        plugins: {
-            legend: { display: false }
-        },
+        interaction: { mode: 'index', intersect: false },
+        plugins: { legend: { display: false } },
         scales: {
-            x: {
-                type: 'linear',
-                title: { display: true, text: 'Czas [s]' }
-            },
-            y: {
-                title: { display: true, text: 'Moc [W]' }
-            }
+            x: { type: 'linear', title: { display: true, text: 'Czas [s]' } },
+            y: { title: { display: true, text: 'Moc [W]' } }
         }
     }
 });
 
 fileInput.addEventListener('change', () => {
-    if (fileInput.files.length === 0) return;
-    loadTCX(fileInput.files[0]);
+    if (fileInput.files.length) loadTCX(fileInput.files[0]);
 });
+smoothingSelect.addEventListener('change', redraw);
+toleranceSelect.addEventListener('change', redraw);
 
-smoothingSelect.addEventListener('change', applyLapSmoothing);
-
+// ------------------------------------------------------------
+// TCX
+// ------------------------------------------------------------
 function loadTCX(file) {
     const reader = new FileReader();
-
     reader.onload = e => {
         const xml = new DOMParser().parseFromString(e.target.result, "text/xml");
 
-        // ---------- LAPY ----------
-        const lapNodes = Array.from(xml.getElementsByTagName("Lap"));
-        const laps = lapNodes.map((lap, index) => ({
-            index: index + 1,
+        const laps = Array.from(xml.getElementsByTagName("Lap")).map((lap, i) => ({
+            index: i + 1,
             startTime: new Date(lap.getAttribute("StartTime"))
         }));
 
-        // ---------- TRACKPOINTY ----------
         const trackpoints = xml.getElementsByTagName("Trackpoint");
 
-        let activityStart = null;
         rawData = [];
+        let startTime = null;
 
         for (let tp of trackpoints) {
-            const timeNode = tp.getElementsByTagName("Time")[0];
-            const wattsNode = tp.getElementsByTagName("ns3:Watts")[0];
+            const t = tp.getElementsByTagName("Time")[0];
+            const w = tp.getElementsByTagName("ns3:Watts")[0];
+            if (!t || !w) continue;
 
-            if (!timeNode || !wattsNode) continue;
-
-            const time = new Date(timeNode.textContent);
-            const watts = parseInt(wattsNode.textContent);
-
-            if (!activityStart) activityStart = time;
+            const time = new Date(t.textContent);
+            if (!startTime) startTime = time;
 
             rawData.push({
-                x: (time - activityStart) / 1000,
-                y: watts
+                x: (time - startTime) / 1000,
+                y: parseInt(w.textContent)
             });
         }
 
-        // ---------- MARKERY LAP ----------
         lapMarkers = laps
-            .map(l => ({
-                lap: l.index,
-                x: (l.startTime - activityStart) / 1000
-            }))
+            .map(l => ({ x: (l.startTime - startTime) / 1000 }))
             .filter(l => l.x >= 0);
 
-        applyLapSmoothing();
+        redraw();
     };
-
     reader.readAsText(file);
 }
 
-function applyLapSmoothing() {
-    if (rawData.length === 0) return;
+// ------------------------------------------------------------
+// RYSOWANIE
+// ------------------------------------------------------------
+function redraw() {
+    if (!rawData.length) return;
 
     const windowSize = parseInt(smoothingSelect.value);
-    let smoothedData = [];
+    const tolerance = parseInt(toleranceSelect.value) / 100;
 
-    // ---------- GRANICE LAP ----------
-    const lapBoundaries = [...lapMarkers.map(l => l.x), Infinity];
-    let lapIndex = 0;
-    let currentLapData = [];
+    const smoothed = smoothPerLapSmart(rawData, lapMarkers, windowSize, tolerance);
 
-    for (let point of rawData) {
-        if (point.x >= lapBoundaries[lapIndex + 1]) {
-            smoothedData.push(...smoothLapForward(currentLapData, windowSize));
-            currentLapData = [];
-            lapIndex++;
-        }
-        currentLapData.push(point);
-    }
-    smoothedData.push(...smoothLapForward(currentLapData, windowSize));
-
-    chart.data.datasets = [];
-
-    // ---------- LINIA MOCY ----------
-    chart.data.datasets.push({
-        data: smoothedData,
+    chart.data.datasets = [{
+        data: smoothed,
         borderColor: POWER_COLOR,
         borderWidth: 2,
         pointRadius: 0
-    });
+    }];
 
-    // ---------- LINIE LAP ----------
-    const maxY = Math.max(...smoothedData.map(p => p.y));
+    const maxY = Math.max(...smoothed.map(p => p.y));
 
-    lapMarkers.forEach(lap => {
+    lapMarkers.forEach(l => {
         chart.data.datasets.push({
-            data: [
-                { x: lap.x, y: 0 },
-                { x: lap.x, y: maxY }
-            ],
+            data: [{ x: l.x, y: 0 }, { x: l.x, y: maxY }],
             type: 'line',
             borderColor: LAP_COLOR,
-            borderWidth: 1,
             borderDash: [5, 5],
+            borderWidth: 1,
             pointRadius: 0
         });
     });
@@ -185,25 +167,68 @@ function applyLapSmoothing() {
     chart.update();
 }
 
-// =======================================================
-// FORWARD-LOOKING ROLLING AVERAGE (bez rampy na starcie)
-// =======================================================
-function smoothLapForward(lapData, windowSize) {
-    if (windowSize <= 1) {
-        return lapData.map(p => ({ x: p.x, y: p.y }));
-    }
+// ------------------------------------------------------------
+// INTELIGENTNE WYGŁADZANIE
+// ------------------------------------------------------------
+function smoothPerLapSmart(data, laps, windowSize, tolerance) {
+    if (windowSize <= 1) return data;
 
+    const boundaries = [...laps.map(l => l.x), Infinity];
     let result = [];
+    let lapIndex = 0;
+    let buffer = [];
 
-    for (let i = 0; i < lapData.length; i++) {
-        const end = Math.min(lapData.length, i + windowSize);
-        const slice = lapData.slice(i, end);
-        const avg = slice.reduce((sum, p) => sum + p.y, 0) / slice.length;
-
-        result.push({ x: lapData[i].x, y: avg });
+    for (let p of data) {
+        if (p.x >= boundaries[lapIndex + 1]) {
+            result.push(...smoothLapSmart(buffer, windowSize, tolerance));
+            buffer = [];
+            lapIndex++;
+        }
+        buffer.push(p);
     }
-
+    result.push(...smoothLapSmart(buffer, windowSize, tolerance));
     return result;
+}
+
+function smoothLapSmart(lap, windowSize, tolerance) {
+    let out = [];
+
+    for (let i = 0; i < lap.length; i++) {
+        const ref = median([
+            lap[i - 1]?.y,
+            lap[i]?.y,
+            lap[i + 1]?.y
+        ].filter(v => v !== undefined));
+
+        const candidates = [];
+
+        for (let back = windowSize; back >= 0; back--) {
+            const fwd = windowSize - back;
+            const start = Math.max(0, i - back);
+            const end = Math.min(lap.length, i + fwd + 1);
+            const slice = lap.slice(start, end);
+
+            if (!slice.length) continue;
+
+            const avg = slice.reduce((s, p) => s + p.y, 0) / slice.length;
+            const diff = Math.abs(avg - ref) / Math.max(avg, ref);
+
+            if (diff <= tolerance) candidates.push(avg);
+        }
+
+        const y = candidates.length
+            ? candidates.reduce((s, v) => s + v, 0) / candidates.length
+            : lap[i].y;
+
+        out.push({ x: lap[i].x, y });
+    }
+    return out;
+}
+
+function median(arr) {
+    arr.sort((a, b) => a - b);
+    const m = Math.floor(arr.length / 2);
+    return arr.length % 2 ? arr[m] : (arr[m - 1] + arr[m]) / 2;
 }
 </script>
 
