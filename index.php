@@ -50,7 +50,8 @@ const ctx = document.getElementById('powerChart').getContext('2d');
 let rawData = [];
 let lapMarkers = [];
 
-const LAP_COLOR = 'rgba(0, 0, 0, 0.4)'; // jednolity kolor wszystkich LAP
+const POWER_COLOR = '#1f77b4';          // 🔵 niebieska linia mocy
+const LAP_COLOR   = 'rgba(0,0,0,0.35)'; // jednolity kolor LAP
 
 let chart = new Chart(ctx, {
     type: 'line',
@@ -116,7 +117,6 @@ function loadTCX(file) {
             if (!activityStart) activityStart = time;
 
             rawData.push({
-                time: time,
                 x: (time - activityStart) / 1000,
                 y: watts
             });
@@ -155,19 +155,19 @@ function applyLapSmoothing() {
         }
         currentLapData.push(point);
     }
-
     smoothedData.push(...smoothLap(currentLapData, windowSize));
 
     chart.data.datasets = [];
 
-    // ---------- MOC ----------
+    // ---------- LINIA MOCY (NIEBIESKA) ----------
     chart.data.datasets.push({
         data: smoothedData,
+        borderColor: POWER_COLOR,
         borderWidth: 2,
         pointRadius: 0
     });
 
-    // ---------- LINIE LAP (jednolity kolor) ----------
+    // ---------- LINIE LAP ----------
     const maxY = Math.max(...smoothedData.map(p => p.y));
 
     lapMarkers.forEach(lap => {
