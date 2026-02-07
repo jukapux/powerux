@@ -26,8 +26,8 @@
         Wygładzanie mocy:
         <select id="powerSmooth">
             <option value="1">Brak</option>
-            <option value="3" selected>3 s</option>
-            <option value="10">10 s</option>
+            <option value="3">3 s</option>
+            <option value="10" selected>10 s</option>
             <option value="30">30 s</option>
         </select>
     </label>
@@ -38,8 +38,8 @@
             <option value="none">brak</option>
             <option value="10">10 %</option>
             <option value="20">20 %</option>
-            <option value="30" selected>30 %</option>
-            <option value="40">40 %</option>
+            <option value="30">30 %</option>
+            <option value="40" selected>40 %</option>
             <option value="50">50 %</option>
             <option value="60">60 %</option>
             <option value="70">70 %</option>
@@ -53,7 +53,8 @@
         <select id="hrSmooth">
             <option value="1">Brak</option>
             <option value="3">3 s</option>
-            <option value="10" selected>10 s</option>
+            <option value="5" selected>5 s</option>
+            <option value="10">10 s</option>
             <option value="30">30 s</option>
         </select>
     </label>
@@ -208,7 +209,6 @@ function redraw() {
     const tolerance = tolVal === 'none' ? Infinity : (+tolVal / 100);
     const zeroRun = +zeroSelect.value;
 
-    // ⭐ ZAWSZE startujemy z SUROWEGO rawData ⭐
     const filtered = filterZeroRuns([...rawData], zeroRun);
 
     const smoothedPower = smoothPowerPerLap(filtered, lapMarkers, pWindow, tolerance);
