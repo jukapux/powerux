@@ -1,5 +1,4 @@
 <!DOCTYPE html>
-
 <html lang="pl">
 <head>
     <meta charset="UTF-8">
@@ -51,6 +50,8 @@ const ctx = document.getElementById('powerChart').getContext('2d');
 let rawData = [];
 let lapMarkers = [];
 
+const LAP_COLOR = 'rgba(0, 0, 0, 0.4)'; // jednolity kolor wszystkich LAP
+
 let chart = new Chart(ctx, {
     type: 'line',
     data: { datasets: [] },
@@ -59,6 +60,11 @@ let chart = new Chart(ctx, {
         interaction: {
             mode: 'index',
             intersect: false
+        },
+        plugins: {
+            legend: {
+                display: false   // ❌ legenda wyłączona
+            }
         },
         scales: {
             x: {
@@ -134,46 +140,46 @@ function applyLapSmoothing() {
     if (rawData.length === 0) return;
 
     const windowSize = parseInt(smoothingSelect.value);
-    let datasets = [];
+    let smoothedData = [];
 
-    // ---------- PODZIAŁ NA LAPY ----------
+    // ---------- GRANICE LAP ----------
     let lapBoundaries = [...lapMarkers.map(l => l.x), Infinity];
-
     let lapIndex = 0;
     let currentLapData = [];
 
     for (let point of rawData) {
         if (point.x >= lapBoundaries[lapIndex + 1]) {
-            datasets.push(...smoothLap(currentLapData, windowSize));
+            smoothedData.push(...smoothLap(currentLapData, windowSize));
             currentLapData = [];
             lapIndex++;
         }
         currentLapData.push(point);
     }
 
-    datasets.push(...smoothLap(currentLapData, windowSize));
+    smoothedData.push(...smoothLap(currentLapData, windowSize));
 
     chart.data.datasets = [];
 
     // ---------- MOC ----------
     chart.data.datasets.push({
-        label: `Moc ${windowSize > 1 ? `(${windowSize}s / Lap)` : ''}`,
-        data: datasets,
+        data: smoothedData,
         borderWidth: 2,
         pointRadius: 0
     });
 
-    // ---------- LINIE LAP ----------
+    // ---------- LINIE LAP (jednolity kolor) ----------
+    const maxY = Math.max(...smoothedData.map(p => p.y));
+
     lapMarkers.forEach(lap => {
         chart.data.datasets.push({
-            label: `Lap ${lap.lap}`,
             data: [
                 { x: lap.x, y: 0 },
-                { x: lap.x, y: Math.max(...datasets.map(p => p.y)) }
+                { x: lap.x, y: maxY }
             ],
             type: 'line',
-            borderDash: [5, 5],
+            borderColor: LAP_COLOR,
             borderWidth: 1,
+            borderDash: [5, 5],
             pointRadius: 0
         });
     });
@@ -202,4 +208,3 @@ function smoothLap(lapData, windowSize) {
 
 </body>
 </html>
-
