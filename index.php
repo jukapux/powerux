@@ -2,7 +2,7 @@
 <html lang="pl">
 <head>
     <meta charset="UTF-8">
-    <title>Analiza mocy – TCX (Lap-based smoothing)</title>
+    <title>Analiza mocy – TCX (Forward smoothing per Lap)</title>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
@@ -50,8 +50,8 @@ const ctx = document.getElementById('powerChart').getContext('2d');
 let rawData = [];
 let lapMarkers = [];
 
-const POWER_COLOR = '#1f77b4';          // 🔵 niebieska linia mocy
-const LAP_COLOR   = 'rgba(0,0,0,0.35)'; // jednolity kolor LAP
+const POWER_COLOR = '#1f77b4';          // 🔵 linia mocy
+const LAP_COLOR   = 'rgba(0,0,0,0.35)'; // ⚪ linie LAP
 
 let chart = new Chart(ctx, {
     type: 'line',
@@ -63,9 +63,7 @@ let chart = new Chart(ctx, {
             intersect: false
         },
         plugins: {
-            legend: {
-                display: false   // ❌ legenda wyłączona
-            }
+            legend: { display: false }
         },
         scales: {
             x: {
@@ -143,23 +141,23 @@ function applyLapSmoothing() {
     let smoothedData = [];
 
     // ---------- GRANICE LAP ----------
-    let lapBoundaries = [...lapMarkers.map(l => l.x), Infinity];
+    const lapBoundaries = [...lapMarkers.map(l => l.x), Infinity];
     let lapIndex = 0;
     let currentLapData = [];
 
     for (let point of rawData) {
         if (point.x >= lapBoundaries[lapIndex + 1]) {
-            smoothedData.push(...smoothLap(currentLapData, windowSize));
+            smoothedData.push(...smoothLapForward(currentLapData, windowSize));
             currentLapData = [];
             lapIndex++;
         }
         currentLapData.push(point);
     }
-    smoothedData.push(...smoothLap(currentLapData, windowSize));
+    smoothedData.push(...smoothLapForward(currentLapData, windowSize));
 
     chart.data.datasets = [];
 
-    // ---------- LINIA MOCY (NIEBIESKA) ----------
+    // ---------- LINIA MOCY ----------
     chart.data.datasets.push({
         data: smoothedData,
         borderColor: POWER_COLOR,
@@ -187,7 +185,10 @@ function applyLapSmoothing() {
     chart.update();
 }
 
-function smoothLap(lapData, windowSize) {
+// =======================================================
+// FORWARD-LOOKING ROLLING AVERAGE (bez rampy na starcie)
+// =======================================================
+function smoothLapForward(lapData, windowSize) {
     if (windowSize <= 1) {
         return lapData.map(p => ({ x: p.x, y: p.y }));
     }
@@ -195,9 +196,9 @@ function smoothLap(lapData, windowSize) {
     let result = [];
 
     for (let i = 0; i < lapData.length; i++) {
-        let start = Math.max(0, i - windowSize + 1);
-        let slice = lapData.slice(start, i + 1);
-        let avg = slice.reduce((sum, p) => sum + p.y, 0) / slice.length;
+        const end = Math.min(lapData.length, i + windowSize);
+        const slice = lapData.slice(i, end);
+        const avg = slice.reduce((sum, p) => sum + p.y, 0) / slice.length;
 
         result.push({ x: lapData[i].x, y: avg });
     }
