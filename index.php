@@ -33,7 +33,7 @@
         Wygładzanie:
         <select id="smoothingSelect">
             <option value="1">Brak</option>
-            <option value="3">3 s</option>
+            <option value="3" selected>3 s</option>
             <option value="10">10 s</option>
             <option value="30">30 s</option>
             <option value="60">60 s</option>
@@ -63,7 +63,7 @@
             <option value="0">nie ignoruj</option>
             <option value="1">≥1 (pojedyncze)</option>
             <option value="2">≥2 z rzędu</option>
-            <option value="3">≥3 z rzędu</option>
+            <option value="3" selected>≥3 z rzędu</option>
         </select>
     </label>
 </div>
@@ -185,7 +185,7 @@ function redraw() {
 }
 
 // ------------------------------------------------------------
-// FILTROWANIE 0 W (RUN-LENGTH)
+// FILTROWANIE 0 W
 // ------------------------------------------------------------
 function filterZeroRuns(data, minRun) {
     if (minRun === 0) return data;
