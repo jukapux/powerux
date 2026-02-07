@@ -5,6 +5,7 @@
     <title>Analiza mocy – TCX</title>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 
     <style>
         body {
@@ -16,6 +17,10 @@
         }
         label {
             margin-left: 20px;
+        }
+        button {
+            margin-left: 20px;
+            padding: 4px 10px;
         }
         canvas {
             max-width: 100%;
@@ -61,11 +66,13 @@
         Ignoruj 0 W:
         <select id="zeroSelect">
             <option value="0">nie ignoruj</option>
-            <option value="1">≥1 (pojedyncze)</option>
-            <option value="2">≥2 z rzędu</option>
-            <option value="3" selected>≥3 z rzędu</option>
+            <option value="1">≥1</option>
+            <option value="2">≥2</option>
+            <option value="3" selected>≥3</option>
         </select>
     </label>
+
+    <button id="resetZoom">Zeruj przybliżenie</button>
 </div>
 
 <canvas id="powerChart"></canvas>
@@ -75,6 +82,7 @@ const fileInput = document.getElementById('fileInput');
 const smoothingSelect = document.getElementById('smoothingSelect');
 const toleranceSelect = document.getElementById('toleranceSelect');
 const zeroSelect = document.getElementById('zeroSelect');
+const resetZoomBtn = document.getElementById('resetZoom');
 const ctx = document.getElementById('powerChart').getContext('2d');
 
 const POWER_COLOR = '#1f77b4';
@@ -83,13 +91,24 @@ const LAP_COLOR   = 'rgba(0,0,0,0.35)';
 let rawData = [];
 let lapMarkers = [];
 
-let chart = new Chart(ctx, {
+const chart = new Chart(ctx, {
     type: 'line',
     data: { datasets: [] },
     options: {
         responsive: true,
         interaction: { mode: 'index', intersect: false },
-        plugins: { legend: { display: false } },
+        plugins: {
+            legend: { display: false },
+            zoom: {
+                zoom: {
+                    drag: {
+                        enabled: true,
+                        backgroundColor: 'rgba(0,0,0,0.1)'
+                    },
+                    mode: 'x'
+                }
+            }
+        },
         scales: {
             x: { type: 'linear', title: { display: true, text: 'Czas [s]' } },
             y: { title: { display: true, text: 'Moc [W]' } }
@@ -99,6 +118,8 @@ let chart = new Chart(ctx, {
 
 [fileInput, smoothingSelect, toleranceSelect, zeroSelect]
     .forEach(el => el.addEventListener('change', redraw));
+
+resetZoomBtn.addEventListener('click', () => chart.resetZoom());
 
 // ------------------------------------------------------------
 // TCX
@@ -153,13 +174,7 @@ function redraw() {
     const zeroRun   = +zeroSelect.value;
 
     const filtered = filterZeroRuns(rawData, zeroRun);
-
-    const smoothed = smoothPerLapSmart(
-        filtered,
-        lapMarkers,
-        windowSize,
-        tolerance
-    );
+    const smoothed = smoothPerLapSmart(filtered, lapMarkers, windowSize, tolerance);
 
     chart.data.datasets = [{
         data: smoothed,
@@ -185,7 +200,7 @@ function redraw() {
 }
 
 // ------------------------------------------------------------
-// FILTROWANIE 0 W
+// FILTR 0 W
 // ------------------------------------------------------------
 function filterZeroRuns(data, minRun) {
     if (minRun === 0) return data;
@@ -194,15 +209,13 @@ function filterZeroRuns(data, minRun) {
     let run = [];
 
     for (let p of data) {
-        if (p.y === 0) {
-            run.push(p);
-        } else {
+        if (p.y === 0) run.push(p);
+        else {
             if (run.length && run.length < minRun) result.push(...run);
             run = [];
             result.push(p);
         }
     }
-
     if (run.length && run.length < minRun) result.push(...run);
     return result;
 }
@@ -247,12 +260,10 @@ function smoothLapSmart(lap, windowSize, tolerance) {
             const s = Math.max(0, i - back);
             const e = Math.min(lap.length, i + fwd + 1);
             const slice = lap.slice(s, e);
-
             if (!slice.length) continue;
 
             const avg = slice.reduce((a, p) => a + p.y, 0) / slice.length;
             const diff = Math.abs(avg - ref) / Math.max(avg, ref);
-
             if (diff <= tolerance) candidates.push(avg);
         }
 
