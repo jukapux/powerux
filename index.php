@@ -82,6 +82,13 @@
 <canvas id="chart"></canvas>
 
 <script>
+/* ===================== NARZĘDZIA ===================== */
+function formatTimeMMSS(seconds) {
+    const m = Math.floor(seconds / 60);
+    const s = Math.floor(seconds % 60);
+    return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+}
+
 /* ===================== KONFIG ===================== */
 const ctx = document.getElementById('chart').getContext('2d');
 
@@ -97,13 +104,6 @@ const COLORS = {
 let rawData = [];
 let lapMarkers = [];
 let lapAverages = [];
-
-/* ===================== FORMAT mm:ss ===================== */
-function formatTimeMMSS(seconds) {
-    const m = Math.floor(seconds / 60);
-    const s = Math.floor(seconds % 60);
-    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-}
 
 /* ===================== WYKRES ===================== */
 const chart = new Chart(ctx, {
@@ -122,7 +122,7 @@ const chart = new Chart(ctx, {
             },
             tooltip: {
                 callbacks: {
-                    title: c => formatTimeMMSS(c[0].parsed.x),
+                    title: ctx => formatTimeMMSS(ctx[0].parsed.x),
                     label: c => {
                         const p = c.raw;
                         const out = [];
@@ -149,9 +149,7 @@ const chart = new Chart(ctx, {
             x: {
                 type: 'linear',
                 title: { display: true, text: 'Czas [mm:ss]' },
-                ticks: {
-                    callback: value => formatTimeMMSS(value)
-                }
+                ticks: { callback: v => formatTimeMMSS(v) }
             },
             yPower: {
                 position: 'left',
@@ -198,12 +196,11 @@ function loadTCX(e) {
             rawData.push({
                 x: (time - start) / 1000,
                 power: +tp.getElementsByTagName("ns3:Watts")[0]?.textContent ?? null,
-                hr: +tp.getElementsByTagName("HeartRateBpm")[0]
-                        ?.getElementsByTagName("Value")[0]?.textContent ?? null,
+                hr: +tp.getElementsByTagName("HeartRateBpm")[0]?.getElementsByTagName("Value")[0]?.textContent ?? null,
                 cad: +tp.getElementsByTagName("Cadence")[0]?.textContent ?? null,
                 speed: tp.getElementsByTagName("ns3:Speed")[0]
-                        ? +tp.getElementsByTagName("ns3:Speed")[0].textContent * 3.6
-                        : null
+                    ? +tp.getElementsByTagName("ns3:Speed")[0].textContent * 3.6
+                    : null
             });
         }
 
@@ -213,21 +210,22 @@ function loadTCX(e) {
     reader.readAsText(file);
 }
 
-// ============================================================
-// RYSOWANIE
-// ============================================================
+/* ===================== RYSOWANIE ===================== */
 function redraw() {
     chart.data.datasets = [];
     lapAverages = [];
     if (!rawData.length) return;
 
-    const windowSize = +smoothingSelect.value;
+    const pWindow = +powerSmooth.value;
+    const hWindow = +hrSmooth.value;
     const tolVal = toleranceSelect.value;
     const tolerance = tolVal === 'none' ? Infinity : (+tolVal / 100);
     const zeroRun = +zeroSelect.value;
 
-    const filtered = filterZeroRuns(rawData, zeroRun);
-    const smoothedPower = smoothPowerPerLap(filtered, lapMarkers, windowSize, tolerance);
+    const filtered = filterZeroRuns([...rawData], zeroRun);
+
+    const smoothedPower = smoothPowerPerLap(filtered, lapMarkers, pWindow, tolerance);
+    const smoothedHR = smoothSimple(rawData, 'hr', hWindow);
 
     if (show('showPower')) {
         chart.data.datasets.push({
@@ -240,69 +238,55 @@ function redraw() {
         drawLapAverages(smoothedPower);
     }
 
-    if (show('showHR')) addSimple('hr', COLORS.hr, 'yHR');
+    if (show('showHR')) {
+        chart.data.datasets.push({
+            data: smoothedHR,
+            borderColor: COLORS.hr,
+            borderWidth: 1.5,
+            pointRadius: 0,
+            yAxisID: 'yHR'
+        });
+    }
+
     if (show('showCad')) addSimple('cad', COLORS.cad, 'yPower');
     if (show('showSpeed')) addSimple('speed', COLORS.speed, 'yPower');
 
     chart.update();
 }
 
+/* ===================== POMOCNICZE ===================== */
 function addSimple(key, color, axis) {
     chart.data.datasets.push({
         data: rawData.filter(p => p[key] != null)
             .map(p => ({ x: p.x, y: p[key], ...p })),
         borderColor: color,
-        borderWidth: 1.5,
+        borderWidth: 1.2,
         pointRadius: 0,
         yAxisID: axis
     });
 }
 
-// ============================================================
-// ŚREDNIA LAP
-// ============================================================
-function drawLapAverages(points) {
-    const bounds = [...lapMarkers, Infinity];
-    let buf = [], i = 0;
-
-    for (let p of points) {
-        if (p.x >= bounds[i + 1]) {
-            renderLapAvg(buf, bounds[i], bounds[i + 1]);
-            buf = [];
-            i++;
-        }
-        buf.push(p);
+function smoothSimple(data, key, windowSize) {
+    if (windowSize <= 1) {
+        return data.filter(p => p[key] != null)
+            .map(p => ({ x: p.x, y: p[key], ...p }));
     }
-    renderLapAvg(buf, bounds[i], bounds[i + 1]);
+
+    let out = [], buf = [];
+    for (let p of data) {
+        if (p[key] == null) continue;
+        buf.push(p[key]);
+        if (buf.length > windowSize) buf.shift();
+        out.push({ x: p.x, y: buf.reduce((a,v)=>a+v,0)/buf.length, ...p });
+    }
+    return out;
 }
 
-function renderLapAvg(points, start, end) {
-    if (!points.length) return;
-
-    const avg = points.reduce((s, p) => s + p.y, 0) / points.length;
-    const realEnd = end === Infinity ? points[points.length - 1].x : end;
-
-    lapAverages.push({ start, end: realEnd, avg });
-
-    chart.data.datasets.push({
-        data: [{ x: start, y: avg }, { x: realEnd, y: avg }],
-        type: 'line',
-        borderColor: COLORS.lapAvgLine,
-        backgroundColor: COLORS.lapAvgFill,
-        fill: 'origin',
-        borderWidth: 2,
-        pointRadius: 0,
-        yAxisID: 'yPower'
-    });
-}
-
-// ============================================================
-// FILTR 0 W
-// ============================================================
+/* ===================== FILTR 0 W ===================== */
 function filterZeroRuns(data, minRun) {
     if (minRun === 0) return data;
-    let out = [], run = [];
 
+    let out = [], run = [];
     for (let p of data) {
         if (p.power === 0) run.push(p);
         else {
@@ -315,9 +299,7 @@ function filterZeroRuns(data, minRun) {
     return out;
 }
 
-// ============================================================
-// INTELIGENTNE WYGŁADZANIE MOCY (NAPRAWIONA TOLERANCJA)
-// ============================================================
+/* ===================== MOC ===================== */
 function smoothPowerPerLap(data, laps, windowSize, tolerance) {
     if (windowSize <= 1) {
         return data.filter(p => p.power != null)
@@ -343,7 +325,7 @@ function smoothLap(lap, windowSize, tolerance) {
     let res = [];
 
     for (let i = 0; i < lap.length; i++) {
-        const ref = lap[i].power; // ⭐ KLUCZOWA ZMIANA ⭐
+        const ref = lap[i].power;
         let candidates = [];
 
         for (let back = windowSize; back >= 0; back--) {
@@ -353,22 +335,20 @@ function smoothLap(lap, windowSize, tolerance) {
             const slice = lap.slice(s, e);
             if (!slice.length) continue;
 
-            const avg = slice.reduce((a, p) => a + p.power, 0) / slice.length;
+            const avg = slice.reduce((a,p)=>a+p.power,0)/slice.length;
 
             if (tolerance === Infinity || ref == null || ref <= 0) {
                 candidates.push(avg);
             } else {
-                const diff = Math.abs(avg - ref) / Math.max(avg, ref);
-                if (diff <= tolerance) {
-                    candidates.push(avg);
-                }
+                const diff = Math.abs(avg-ref)/Math.max(avg,ref);
+                if (diff <= tolerance) candidates.push(avg);
             }
         }
 
         res.push({
             x: lap[i].x,
             y: candidates.length
-                ? candidates.reduce((a, v) => a + v, 0) / candidates.length
+                ? candidates.reduce((a,v)=>a+v,0)/candidates.length
                 : ref,
             ...lap[i]
         });
@@ -376,11 +356,40 @@ function smoothLap(lap, windowSize, tolerance) {
     return res;
 }
 
+/* ===================== LAP AVG ===================== */
+function drawLapAverages(points) {
+    const bounds = [...lapMarkers, Infinity];
+    let buf = [], i = 0;
 
-function median(a) {
-    a.sort((x, y) => x - y);
-    const m = Math.floor(a.length / 2);
-    return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
+    for (let p of points) {
+        if (p.x >= bounds[i + 1]) {
+            renderLapAvg(buf, bounds[i], bounds[i + 1]);
+            buf = [];
+            i++;
+        }
+        buf.push(p);
+    }
+    renderLapAvg(buf, bounds[i], bounds[i + 1]);
+}
+
+function renderLapAvg(points, start, end) {
+    if (!points.length) return;
+
+    const avg = points.reduce((s,p)=>s+p.y,0)/points.length;
+    const realEnd = end === Infinity ? points[points.length-1].x : end;
+
+    lapAverages.push({ start, end: realEnd, avg });
+
+    chart.data.datasets.push({
+        data: [{x:start,y:avg},{x:realEnd,y:avg}],
+        type: 'line',
+        borderColor: COLORS.lapAvgLine,
+        backgroundColor: COLORS.lapAvgFill,
+        fill: 'origin',
+        borderWidth: 2,
+        pointRadius: 0,
+        yAxisID: 'yPower'
+    });
 }
 </script>
 
