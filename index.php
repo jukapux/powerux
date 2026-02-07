@@ -132,8 +132,21 @@ const chart = new Chart(ctx, {
             }
         },
         scales: {
-            x: { type: 'linear', title: { display: true, text: 'Czas [s]' } },
-            y: { title: { display: true, text: 'Wartość' } }
+            x: {
+                type: 'linear',
+                title: { display: true, text: 'Czas [s]' }
+            },
+            yPower: {
+                type: 'linear',
+                position: 'left',
+                title: { display: true, text: 'Moc / inne' }
+            },
+            yHR: {
+                type: 'linear',
+                position: 'right',
+                title: { display: true, text: 'Tętno [bpm]' },
+                grid: { drawOnChartArea: false }
+            }
         }
     }
 });
@@ -167,10 +180,9 @@ function loadTCX(e) {
             if (!t) continue;
             const time = new Date(t.textContent);
             if (!start) start = time;
-            const x = (time - start) / 1000;
 
             rawData.push({
-                x,
+                x: (time - start) / 1000,
                 power: +tp.getElementsByTagName("ns3:Watts")[0]?.textContent || null,
                 hr: +tp.getElementsByTagName("HeartRateBpm")[0]
                         ?.getElementsByTagName("Value")[0]?.textContent || null,
@@ -195,10 +207,10 @@ function redraw() {
     lapAverages = [];
     if (!rawData.length) return;
 
-    const windowSize = +document.getElementById('smoothingSelect').value;
-    const tolVal = document.getElementById('toleranceSelect').value;
+    const windowSize = +smoothingSelect.value;
+    const tolVal = toleranceSelect.value;
     const tolerance = tolVal === 'none' ? Infinity : (+tolVal / 100);
-    const zeroRun = +document.getElementById('zeroSelect').value;
+    const zeroRun = +zeroSelect.value;
 
     const filtered = filterZeroRuns(rawData, zeroRun);
     const smoothedPower = smoothPowerPerLap(filtered, lapMarkers, windowSize, tolerance);
@@ -208,25 +220,27 @@ function redraw() {
             data: smoothedPower,
             borderColor: COLORS.power,
             borderWidth: 2,
-            pointRadius: 0
+            pointRadius: 0,
+            yAxisID: 'yPower'
         });
         drawLapAverages(smoothedPower);
     }
 
-    if (show('showHR')) addSimple('hr', COLORS.hr);
-    if (show('showCad')) addSimple('cad', COLORS.cad);
-    if (show('showSpeed')) addSimple('speed', COLORS.speed);
+    if (show('showHR')) addSimple('hr', COLORS.hr, 'yHR');
+    if (show('showCad')) addSimple('cad', COLORS.cad, 'yPower');
+    if (show('showSpeed')) addSimple('speed', COLORS.speed, 'yPower');
 
     chart.update();
 }
 
-function addSimple(key, color) {
+function addSimple(key, color, axis) {
     chart.data.datasets.push({
         data: rawData.filter(p => p[key] != null)
             .map(p => ({ x: p.x, y: p[key], ...p })),
         borderColor: color,
         borderWidth: 1.5,
-        pointRadius: 0
+        pointRadius: 0,
+        yAxisID: axis
     });
 }
 
@@ -262,7 +276,8 @@ function renderLapAvg(points, start, end) {
         backgroundColor: COLORS.lapAvgFill,
         fill: 'origin',
         borderWidth: 2,
-        pointRadius: 0
+        pointRadius: 0,
+        yAxisID: 'yPower'
     });
 }
 
@@ -326,7 +341,6 @@ function smoothLap(lap, windowSize, tolerance) {
             const s = Math.max(0, i - back);
             const e = Math.min(lap.length, i + fwd + 1);
             const slice = lap.slice(s, e);
-
             if (!slice.length) continue;
 
             const avg = slice.reduce((a, p) => a + p.power, 0) / slice.length;
