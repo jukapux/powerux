@@ -24,14 +24,11 @@
 
     <label>
         Wygładzanie mocy:
-        <select id="smoothingSelect">
+        <select id="powerSmooth">
             <option value="1">Brak</option>
             <option value="3" selected>3 s</option>
             <option value="10">10 s</option>
             <option value="30">30 s</option>
-            <option value="60">60 s</option>
-            <option value="90">90 s</option>
-            <option value="120">120 s</option>
         </select>
     </label>
 
@@ -48,6 +45,16 @@
             <option value="70">70 %</option>
             <option value="80">80 %</option>
             <option value="90">90 %</option>
+        </select>
+    </label>
+
+    <label>
+        Wygładzanie tętna:
+        <select id="hrSmooth">
+            <option value="1">Brak</option>
+            <option value="3">3 s</option>
+            <option value="10">10 s</option>
+            <option value="30">30 s</option>
         </select>
     </label>
 
@@ -112,13 +119,10 @@ const chart = new Chart(ctx, {
 
                         if (show('showPower') && p.power != null)
                             out.push(`Moc: ${Math.round(p.power)} W`);
-
                         if (show('showHR') && p.hr != null)
-                            out.push(`Tętno: ${p.hr} bpm`);
-
+                            out.push(`Tętno: ${Math.round(p.hr)} bpm`);
                         if (show('showCad') && p.cad != null)
                             out.push(`Kadencja: ${p.cad} rpm`);
-
                         if (show('showSpeed') && p.speed != null)
                             out.push(`Prędkość: ${p.speed.toFixed(1)} km/h`);
 
@@ -132,17 +136,9 @@ const chart = new Chart(ctx, {
             }
         },
         scales: {
-            x: {
-                type: 'linear',
-                title: { display: true, text: 'Czas [s]' }
-            },
-            yPower: {
-                type: 'linear',
-                position: 'left',
-                title: { display: true, text: 'Moc / inne' }
-            },
+            x: { type: 'linear', title: { display: true, text: 'Czas [s]' } },
+            yPower: { position: 'left', title: { display: true, text: 'Moc / inne' } },
             yHR: {
-                type: 'linear',
                 position: 'right',
                 title: { display: true, text: 'Tętno [bpm]' },
                 grid: { drawOnChartArea: false }
@@ -152,13 +148,12 @@ const chart = new Chart(ctx, {
 });
 
 const show = id => document.getElementById(id).checked;
-
 document.getElementById('resetZoom').onclick = () => chart.resetZoom();
 document.querySelectorAll('input, select').forEach(el => el.onchange = redraw);
 document.getElementById('fileInput').onchange = loadTCX;
 
 // ============================================================
-// WCZYTYWANIE TCX
+// TCX
 // ============================================================
 function loadTCX(e) {
     const file = e.target.files[0];
@@ -208,13 +203,15 @@ function redraw() {
     lapAverages = [];
     if (!rawData.length) return;
 
-    const windowSize = +smoothingSelect.value;
+    const pWindow = +powerSmooth.value;
+    const hWindow = +hrSmooth.value;
     const tolVal = toleranceSelect.value;
     const tolerance = tolVal === 'none' ? Infinity : (+tolVal / 100);
     const zeroRun = +zeroSelect.value;
 
     const filtered = filterZeroRuns(rawData, zeroRun);
-    const smoothedPower = smoothPowerPerLap(filtered, lapMarkers, windowSize, tolerance);
+    const smoothedPower = smoothPowerPerLap(filtered, lapMarkers, pWindow, tolerance);
+    const smoothedHR = smoothSimple(rawData, 'hr', hWindow);
 
     if (show('showPower')) {
         chart.data.datasets.push({
@@ -227,7 +224,16 @@ function redraw() {
         drawLapAverages(smoothedPower);
     }
 
-    if (show('showHR')) addSimple('hr', COLORS.hr, 'yHR');
+    if (show('showHR')) {
+        chart.data.datasets.push({
+            data: smoothedHR,
+            borderColor: COLORS.hr,
+            borderWidth: 1.5,
+            pointRadius: 0,
+            yAxisID: 'yHR'
+        });
+    }
+
     if (show('showCad')) addSimple('cad', COLORS.cad, 'yPower');
     if (show('showSpeed')) addSimple('speed', COLORS.speed, 'yPower');
 
@@ -239,10 +245,34 @@ function addSimple(key, color, axis) {
         data: rawData.filter(p => p[key] != null)
             .map(p => ({ x: p.x, y: p[key], ...p })),
         borderColor: color,
-        borderWidth: 1.5,
+        borderWidth: 1.2,
         pointRadius: 0,
         yAxisID: axis
     });
+}
+
+// ============================================================
+// PROSTE WYGŁADZANIE (HR)
+// ============================================================
+function smoothSimple(data, key, windowSize) {
+    if (windowSize <= 1) {
+        return data.filter(p => p[key] != null)
+            .map(p => ({ x: p.x, y: p[key], ...p }));
+    }
+
+    let out = [];
+    let buf = [];
+
+    for (let p of data) {
+        if (p[key] == null) continue;
+
+        buf.push(p[key]);
+        if (buf.length > windowSize) buf.shift();
+
+        const avg = buf.reduce((a, v) => a + v, 0) / buf.length;
+        out.push({ x: p.x, y: avg, ...p });
+    }
+    return out;
 }
 
 // ============================================================
@@ -303,7 +333,7 @@ function filterZeroRuns(data, minRun) {
 }
 
 // ============================================================
-// INTELIGENTNE WYGŁADZANIE MOCY (NAPRAWIONA TOLERANCJA)
+// INTELIGENTNE WYGŁADZANIE MOCY
 // ============================================================
 function smoothPowerPerLap(data, laps, windowSize, tolerance) {
     if (windowSize <= 1) {
@@ -330,7 +360,7 @@ function smoothLap(lap, windowSize, tolerance) {
     let res = [];
 
     for (let i = 0; i < lap.length; i++) {
-        const ref = lap[i].power; // ⭐ KLUCZOWA ZMIANA ⭐
+        const ref = lap[i].power;
         let candidates = [];
 
         for (let back = windowSize; back >= 0; back--) {
@@ -346,9 +376,7 @@ function smoothLap(lap, windowSize, tolerance) {
                 candidates.push(avg);
             } else {
                 const diff = Math.abs(avg - ref) / Math.max(avg, ref);
-                if (diff <= tolerance) {
-                    candidates.push(avg);
-                }
+                if (diff <= tolerance) candidates.push(avg);
             }
         }
 
@@ -361,13 +389,6 @@ function smoothLap(lap, windowSize, tolerance) {
         });
     }
     return res;
-}
-
-
-function median(a) {
-    a.sort((x, y) => x - y);
-    const m = Math.floor(a.length / 2);
-    return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
 }
 </script>
 
