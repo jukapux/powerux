@@ -50,6 +50,7 @@
     <label>
         Tolerancja:
         <select id="toleranceSelect">
+            <option value="none">brak</option>
             <option value="10">10 %</option>
             <option value="20">20 %</option>
             <option value="30" selected>30 %</option>
@@ -170,7 +171,8 @@ function redraw() {
     if (!rawData.length) return;
 
     const windowSize = +smoothingSelect.value;
-    const tolerance = +toleranceSelect.value / 100;
+    const tolValue = toleranceSelect.value;
+    const tolerance = tolValue === 'none' ? Infinity : (+tolValue / 100);
     const zeroRun   = +zeroSelect.value;
 
     const filtered = filterZeroRuns(rawData, zeroRun);
@@ -264,6 +266,7 @@ function smoothLapSmart(lap, windowSize, tolerance) {
 
             const avg = slice.reduce((a, p) => a + p.y, 0) / slice.length;
             const diff = Math.abs(avg - ref) / Math.max(avg, ref);
+
             if (diff <= tolerance) candidates.push(avg);
         }
 
