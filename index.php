@@ -81,6 +81,7 @@
 <canvas id="chart"></canvas>
 
 <script>
+/* ===================== KONFIG ===================== */
 const ctx = document.getElementById('chart').getContext('2d');
 
 const COLORS = {
@@ -96,6 +97,7 @@ let rawData = [];
 let lapMarkers = [];
 let lapAverages = [];
 
+/* ===================== WYKRES ===================== */
 const chart = new Chart(ctx, {
     type: 'line',
     data: { datasets: [] },
@@ -147,12 +149,13 @@ const chart = new Chart(ctx, {
     }
 });
 
+/* ===================== UI ===================== */
 const show = id => document.getElementById(id).checked;
 document.getElementById('resetZoom').onclick = () => chart.resetZoom();
 document.querySelectorAll('input, select').forEach(el => el.onchange = redraw);
 document.getElementById('fileInput').onchange = loadTCX;
 
-/* ---------- TCX ---------- */
+/* ===================== TCX ===================== */
 function loadTCX(e) {
     const file = e.target.files[0];
     if (!file) return;
@@ -177,10 +180,10 @@ function loadTCX(e) {
 
             rawData.push({
                 x: (time - start) / 1000,
-                power: +tp.getElementsByTagName("ns3:Watts")[0]?.textContent || null,
+                power: +tp.getElementsByTagName("ns3:Watts")[0]?.textContent ?? null,
                 hr: +tp.getElementsByTagName("HeartRateBpm")[0]
-                        ?.getElementsByTagName("Value")[0]?.textContent || null,
-                cad: +tp.getElementsByTagName("Cadence")[0]?.textContent || null,
+                        ?.getElementsByTagName("Value")[0]?.textContent ?? null,
+                cad: +tp.getElementsByTagName("Cadence")[0]?.textContent ?? null,
                 speed: tp.getElementsByTagName("ns3:Speed")[0]
                         ? +tp.getElementsByTagName("ns3:Speed")[0].textContent * 3.6
                         : null
@@ -193,7 +196,7 @@ function loadTCX(e) {
     reader.readAsText(file);
 }
 
-/* ---------- RYSOWANIE ---------- */
+/* ===================== RYSOWANIE ===================== */
 function redraw() {
     chart.data.datasets = [];
     lapAverages = [];
@@ -205,7 +208,9 @@ function redraw() {
     const tolerance = tolVal === 'none' ? Infinity : (+tolVal / 100);
     const zeroRun = +zeroSelect.value;
 
-    const filtered = filterZeroRuns(rawData, zeroRun);
+    // ⭐ ZAWSZE startujemy z SUROWEGO rawData ⭐
+    const filtered = filterZeroRuns([...rawData], zeroRun);
+
     const smoothedPower = smoothPowerPerLap(filtered, lapMarkers, pWindow, tolerance);
     const smoothedHR = smoothSimple(rawData, 'hr', hWindow);
 
@@ -236,7 +241,7 @@ function redraw() {
     chart.update();
 }
 
-/* ---------- POMOCNICZE ---------- */
+/* ===================== POMOCNICZE ===================== */
 function addSimple(key, color, axis) {
     chart.data.datasets.push({
         data: rawData.filter(p => p[key] != null)
@@ -264,22 +269,33 @@ function smoothSimple(data, key, windowSize) {
     return out;
 }
 
+/* ===================== FILTR 0 W ===================== */
 function filterZeroRuns(data, minRun) {
     if (minRun === 0) return data;
-    let out = [], run = [];
+
+    let out = [];
+    let run = [];
+
     for (let p of data) {
-        if (p.power === 0) run.push(p);
-        else {
-            if (run.length && run.length < minRun) out.push(...run);
+        if (p.power === 0) {
+            run.push(p);
+        } else {
+            if (run.length && run.length < minRun) {
+                out.push(...run);
+            }
             run = [];
             out.push(p);
         }
     }
-    if (run.length && run.length < minRun) out.push(...run);
+
+    if (run.length && run.length < minRun) {
+        out.push(...run);
+    }
+
     return out;
 }
 
-/* ---------- MOC ---------- */
+/* ===================== MOC ===================== */
 function smoothPowerPerLap(data, laps, windowSize, tolerance) {
     if (windowSize <= 1) {
         return data.filter(p => p.power != null)
@@ -303,6 +319,7 @@ function smoothPowerPerLap(data, laps, windowSize, tolerance) {
 
 function smoothLap(lap, windowSize, tolerance) {
     let res = [];
+
     for (let i = 0; i < lap.length; i++) {
         const ref = lap[i].power;
         let candidates = [];
@@ -315,6 +332,7 @@ function smoothLap(lap, windowSize, tolerance) {
             if (!slice.length) continue;
 
             const avg = slice.reduce((a,p)=>a+p.power,0)/slice.length;
+
             if (tolerance === Infinity || ref == null || ref <= 0) {
                 candidates.push(avg);
             } else {
@@ -334,10 +352,11 @@ function smoothLap(lap, windowSize, tolerance) {
     return res;
 }
 
-/* ---------- LAP AVG ---------- */
+/* ===================== LAP AVG ===================== */
 function drawLapAverages(points) {
     const bounds = [...lapMarkers, Infinity];
     let buf = [], i = 0;
+
     for (let p of points) {
         if (p.x >= bounds[i + 1]) {
             renderLapAvg(buf, bounds[i], bounds[i + 1]);
@@ -351,6 +370,7 @@ function drawLapAverages(points) {
 
 function renderLapAvg(points, start, end) {
     if (!points.length) return;
+
     const avg = points.reduce((s,p)=>s+p.y,0)/points.length;
     const realEnd = end === Infinity ? points[points.length-1].x : end;
 
