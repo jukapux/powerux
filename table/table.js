@@ -8,8 +8,12 @@ export function buildLapTable({
 }) {
     lapTableBody.innerHTML = '';
     const bounds = [...lapMarkers, Infinity];
+    const lapCount = lapSummaries.length;
 
-    for (let i = 0; i < lapSummaries.length; i++) {
+    // ===================== PRZYGOTOWANIE DANYCH LAPÓW =====================
+    const laps = [];
+
+    for (let i = 0; i < lapCount; i++) {
         const start = bounds[i];
         const end = bounds[i + 1];
 
@@ -20,15 +24,40 @@ export function buildLapTable({
         const endHR = hrLap.length ? hrLap.at(-1) : '-';
         const s = lapSummaries[i];
 
-        lapTableBody.innerHTML += `
-            <tr>
-                <td>${i + 1}</td>
-                <td>${s.avgPower ?? '-'}</td>
-                <td>${s.maxPower ?? '-'}</td>
-                <td>${s.avgHR ?? '-'}</td>
-                <td>${s.maxHR ?? '-'}</td>
-                <td>${endHR}</td>
-                <td>${s.avgPower && s.avgHR ? (s.avgHR / s.avgPower).toFixed(3) : '-'}</td>
-            </tr>`;
+        laps.push({
+            label: `Lap ${i + 1}`,
+            avgPower: s.avgPower ?? '-',
+            maxPower: s.maxPower ?? '-',
+            avgHR: s.avgHR ?? '-',
+            maxHR: s.maxHR ?? '-',
+            endHR,
+            hrw:
+                s.avgPower && s.avgHR
+                    ? (s.avgHR / s.avgPower).toFixed(3)
+                    : '-'
+        });
+    }
+
+    // ===================== DEFINICJA WIERSZY (METRYK) =====================
+    const rows = [
+        { label: 'Lap', key: 'label' },
+        { label: 'Śr. moc', key: 'avgPower' },
+        { label: 'Max moc', key: 'maxPower' },
+        { label: 'Śr. HR', key: 'avgHR' },
+        { label: 'Max HR', key: 'maxHR' },
+        { label: 'HR koniec', key: 'endHR' },
+        { label: 'HR / W', key: 'hrw' }
+    ];
+
+    // ===================== BUDOWANIE TABELI =====================
+    for (const row of rows) {
+        let html = `<tr><th>${row.label}</th>`;
+
+        for (const lap of laps) {
+            html += `<td>${lap[row.key]}</td>`;
+        }
+
+        html += `</tr>`;
+        lapTableBody.innerHTML += html;
     }
 }
