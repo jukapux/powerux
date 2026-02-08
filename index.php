@@ -126,15 +126,14 @@ td:first-child, th:first-child { text-align: center; }
 /* ===================== UTIL ===================== */
 const avg = arr => arr.length ? arr.reduce((a,b)=>a+b,0)/arr.length : 0;
 
-function formatTime(sec) {
+function formatTime(sec){
     sec = Math.round(sec);
     const h = Math.floor(sec / 3600);
     const m = Math.floor((sec % 3600) / 60);
     const s = sec % 60;
-    if (h > 0) {
-        return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
-    }
-    return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+    return h > 0
+        ? `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`
+        : `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
 }
 
 /* ===================== STATE ===================== */
@@ -148,32 +147,19 @@ const lapLabelsPlugin = {
     id: 'lapLabels',
     afterDraw(chart) {
         if (!lapMarkers.length || !rawData.length) return;
-
         const { ctx, chartArea, scales } = chart;
         const xScale = scales.x;
-        if (!xScale) return;
-
         ctx.save();
         ctx.fillStyle = 'rgba(120,120,120,0.35)';
         ctx.font = 'bold 14px Arial';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'bottom';
-
         const bounds = [...lapMarkers, rawData.at(-1).x];
-
         for (let i = 0; i < lapMarkers.length; i++) {
-            const start = bounds[i];
-            const end = bounds[i + 1];
-            const mid = (start + end) / 2;
-
+            const mid = (bounds[i] + bounds[i + 1]) / 2;
             if (mid < xScale.min || mid > xScale.max) continue;
-
-            const x = xScale.getPixelForValue(mid);
-            const y = chartArea.bottom - 4;
-
-            ctx.fillText(`Lap ${i + 1}`, x, y);
+            ctx.fillText(`Lap ${i + 1}`, xScale.getPixelForValue(mid), chartArea.bottom - 4);
         }
-
         ctx.restore();
     }
 };
@@ -182,34 +168,23 @@ const lapLabelsPlugin = {
 const lapHighlightPlugin = {
     id: 'lapHighlight',
     beforeDraw(chart) {
-        if (!lapMarkers.length || !rawData.length || !selectedLaps?.length) return;
-
+        if (!selectedLaps?.length) return;
         const { ctx, chartArea, scales } = chart;
         const xScale = scales.x;
-        if (!xScale) return;
-
         ctx.save();
         ctx.fillStyle = 'rgba(120,120,120,0.20)';
-
         const bounds = [...lapMarkers, rawData.at(-1).x];
-
         for (const i of selectedLaps) {
-            const start = bounds[i];
-            const end = bounds[i + 1];
-
-            if (end < xScale.min || start > xScale.max) continue;
-
-            const x1 = xScale.getPixelForValue(Math.max(start, xScale.min));
-            const x2 = xScale.getPixelForValue(Math.min(end, xScale.max));
-
+            const s = bounds[i], e = bounds[i + 1];
+            if (e < xScale.min || s > xScale.max) continue;
             ctx.fillRect(
-                x1,
+                xScale.getPixelForValue(Math.max(s, xScale.min)),
                 chartArea.top,
-                x2 - x1,
+                xScale.getPixelForValue(Math.min(e, xScale.max)) -
+                xScale.getPixelForValue(Math.max(s, xScale.min)),
                 chartArea.bottom - chartArea.top
             );
         }
-
         ctx.restore();
     }
 };
@@ -227,11 +202,9 @@ zoom:{zoom:{drag:{enabled:true},mode:'x'}}
 },
 scales:{
 x:{
-type:'linear',
-title:{display:true,text:'Czas'},
-ticks:{
-callback:(value)=>formatTime(value)
-}
+    type:'linear',
+    title:{display:true,text:'Czas'},
+    ticks:{ callback:value => formatTime(value) }
 },
 yPower:{position:'left',title:{display:true,text:'Moc / inne'}},
 yHR:{
@@ -240,10 +213,11 @@ title:{display:true,text:'Tętno [bpm]'},
 grid:{drawOnChartArea:false}
 }
 }
-}
 },
 plugins:[lapHighlightPlugin, lapLabelsPlugin]
 });
+
+
 
 /* ===================== UI ===================== */
 const show = id => document.getElementById(id).checked;
