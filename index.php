@@ -26,6 +26,32 @@
         }
         th { background: #f0f0f0; }
         td:first-child, th:first-child { text-align: center; }
+
+        /* ===================== ZEBRA KOLUMN ===================== */
+
+        /* pomijamy 1. kolumnę (metryki), zaczynamy od Lap 1 */
+        #lapTable td:nth-child(even),
+        #lapTable th:nth-child(even) {
+            background-color: #f6f6f6;
+        }
+
+        #lapTable th:first-child {
+        position: sticky;
+        left: 0;
+        background: #eee;
+        z-index: 2;
+        }
+
+        #lapTable th:first-child {
+        box-shadow: 2px 0 4px rgba(0,0,0,0.1);
+        }
+        #lapTable thead th {
+        text-align: center;
+        }
+
+
+
+
     </style>
 </head>
 <body>
@@ -88,22 +114,23 @@
 </div>
 
 <table id="lapTable">
+    <thead></thead>
     <tbody></tbody>
 </table>
+
 
 
 <canvas id="chart"></canvas>
 
 <script>
 /* ===================== UTIL ===================== */
-const avg = arr => arr.reduce((a,b)=>a+b,0)/arr.length;
+const avg = arr => arr.length ? arr.reduce((a,b)=>a+b,0)/arr.length : 0;
+
 
 /* ===================== STATE ===================== */
 let rawData = [];
 let lapMarkers = [];
 let lapSummaries = [];
-
-const lapTableBody = document.querySelector('#lapTable tbody');
 
 /* ===================== CHART ===================== */
 const chart = new Chart(document.getElementById('chart'), {
@@ -196,7 +223,6 @@ function loadTCX(e) {
 /* ===================== REDRAW ===================== */
 function redraw() {
     chart.data.datasets = [];
-    lapTableBody.innerHTML = '';
     if (!rawData.length) return;
 
     const tolerance = toleranceSelect.value === 'none'
@@ -351,8 +377,20 @@ function renderLapAvg(points,start,end) {
 
 /* ===================== LAP TABLE ===================== */
 function buildLapTable() {
-    lapTableBody.innerHTML = '';
+    const table = document.getElementById('lapTable');
+    const thead = table.querySelector('thead');
+    const tbody = table.querySelector('tbody');
+
+    thead.innerHTML = '';
+    tbody.innerHTML = '';
+    
+    // ⛑️ zabezpieczenie: brak lapów w TCX
+    if (!lapSummaries.length) return;
+    
     const bounds = [...lapMarkers, Infinity];
+
+    // ===================== DANE LAPÓW =====================
+    const laps = [];
 
     for (let i = 0; i < lapSummaries.length; i++) {
         const start = bounds[i];
@@ -365,18 +403,46 @@ function buildLapTable() {
         const endHR = hrLap.length ? hrLap.at(-1) : '-';
         const s = lapSummaries[i];
 
-        lapTableBody.innerHTML += `
-            <tr>
-                <td>${i + 1}</td>
-                <td>${s.avgPower ?? '-'}</td>
-                <td>${s.maxPower ?? '-'}</td>
-                <td>${s.avgHR ?? '-'}</td>
-                <td>${s.maxHR ?? '-'}</td>
-                <td>${endHR}</td>
-                <td>${s.avgPower && s.avgHR ? (s.avgHR / s.avgPower).toFixed(3) : '-'}</td>
-            </tr>`;
+        laps.push({
+            label: `Lap ${i + 1}`,
+            avgPower: s.avgPower ?? '-',
+            maxPower: s.maxPower ?? '-',
+            avgHR: s.avgHR ?? '-',
+            maxHR: s.maxHR ?? '-',
+            endHR,
+            hrw:
+                s.avgPower && s.avgHR
+                    ? (s.avgHR / s.avgPower).toFixed(3)
+                    : '-'
+        });
+    }
+
+    // ===================== THEAD =====================
+    let head = `<tr><th></th>`;
+    for (const lap of laps) head += `<th>${lap.label}</th>`;
+    head += `</tr>`;
+    thead.innerHTML = head;
+
+    // ===================== WIERSZE (METRYKI) =====================
+    const rows = [
+        { label: 'Śr. moc [W]', key: 'avgPower' },
+        { label: 'Max moc [W]', key: 'maxPower' },
+        { label: 'Śr. HR [bpm]', key: 'avgHR' },
+        { label: 'Max HR [bpm]', key: 'maxHR' },
+        { label: 'HR koniec [bpm]', key: 'endHR' },
+        { label: 'HR / W', key: 'hrw' }
+    ];
+
+    for (const row of rows) {
+        let html = `<tr><th>${row.label}</th>`;
+        for (const lap of laps) {
+            html += `<td>${lap[row.key]}</td>`;
+        }
+        html += `</tr>`;
+        tbody.innerHTML += html;
     }
 }
+
 </script>
 
 </body>

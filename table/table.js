@@ -1,10 +1,16 @@
+// table/table.js
 export function buildLapTable({
     lapMarkers,
     lapSummaries,
     rawData,
-    lapTableBody
+    lapTable
 }) {
-    lapTableBody.innerHTML = '';
+    const thead = lapTable.querySelector('thead');
+    const tbody = lapTable.querySelector('tbody');
+
+    thead.innerHTML = '';
+    tbody.innerHTML = '';
+
     const bounds = [...lapMarkers, Infinity];
     const lapCount = lapSummaries.length;
 
@@ -36,18 +42,24 @@ export function buildLapTable({
         });
     }
 
-    // ===================== DEFINICJA WIERSZY (METRYK) =====================
+    // ===================== NAGŁÓWEK KOLUMN =====================
+    let headHtml = `<tr><th></th>`;
+    for (const lap of laps) {
+        headHtml += `<th>${lap.label}</th>`;
+    }
+    headHtml += `</tr>`;
+    thead.innerHTML = headHtml;
+
+    // ===================== WIERSZE (METRYKI) =====================
     const rows = [
-        { label: 'Lap', key: 'label' },
-        { label: 'Śr. moc', key: 'avgPower' },
-        { label: 'Max moc', key: 'maxPower' },
-        { label: 'Śr. HR', key: 'avgHR' },
-        { label: 'Max HR', key: 'maxHR' },
-        { label: 'HR koniec', key: 'endHR' },
+        { label: 'Śr. moc [W]', key: 'avgPower' },
+        { label: 'Max moc [W]', key: 'maxPower' },
+        { label: 'Śr. HR [bpm]', key: 'avgHR' },
+        { label: 'Max HR [bpm]', key: 'maxHR' },
+        { label: 'HR koniec [bpm]', key: 'endHR' },
         { label: 'HR / W', key: 'hrw' }
     ];
 
-    // ===================== BUDOWANIE TABELI =====================
     for (const row of rows) {
         let html = `<tr><th>${row.label}</th>`;
 
@@ -56,6 +68,6 @@ export function buildLapTable({
         }
 
         html += `</tr>`;
-        lapTableBody.innerHTML += html;
+        tbody.innerHTML += html;
     }
 }
