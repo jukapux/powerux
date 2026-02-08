@@ -13,6 +13,19 @@
         label { margin-right: 15px; }
         button { margin-left: 15px; padding: 4px 10px; }
         canvas { max-width: 100%; }
+
+        table {
+            border-collapse: collapse;
+            margin-bottom: 15px;
+            font-size: 14px;
+        }
+        th, td {
+            border: 1px solid #ccc;
+            padding: 4px 8px;
+            text-align: right;
+        }
+        th { background: #f0f0f0; }
+        td:first-child, th:first-child { text-align: center; }
     </style>
 </head>
 <body>
@@ -22,8 +35,7 @@
 <div class="controls">
     <input type="file" id="fileInput" accept=".tcx">
 
-    <label>
-        Wygładzanie mocy:
+    <label>Wygładzanie mocy:
         <select id="powerSmooth">
             <option value="1">Brak</option>
             <option value="3">3 s</option>
@@ -32,8 +44,7 @@
         </select>
     </label>
 
-    <label>
-        Tolerancja:
+    <label>Tolerancja:
         <select id="toleranceSelect">
             <option value="none">brak</option>
             <option value="10">10 %</option>
@@ -48,8 +59,7 @@
         </select>
     </label>
 
-    <label>
-        Wygładzanie tętna:
+    <label>Wygładzanie tętna:
         <select id="hrSmooth">
             <option value="1">Brak</option>
             <option value="3">3 s</option>
@@ -59,8 +69,7 @@
         </select>
     </label>
 
-    <label>
-        Ignoruj 0 W:
+    <label>Ignoruj 0 W:
         <select id="zeroSelect">
             <option value="0">nie ignoruj</option>
             <option value="1">≥1</option>
@@ -73,88 +82,52 @@
 <div class="controls">
     <label><input type="checkbox" id="showPower" checked> Moc</label>
     <label><input type="checkbox" id="showHR" checked> Tętno</label>
-    <label><input type="checkbox" id="showCad"> Kadencja</label>
     <label><input type="checkbox" id="showSpeed"> Prędkość</label>
-
+    <label><input type="checkbox" id="showCad"> Kadencja</label>
     <button id="resetZoom">Zeruj przybliżenie</button>
 </div>
+
+<table id="lapTable">
+    <thead>
+        <tr>
+            <th>Lap</th>
+            <th>Śr. moc</th>
+            <th>Max moc</th>
+            <th>Śr. HR</th>
+            <th>Max HR</th>
+            <th>HR koniec</th>
+            <th>HR / W</th>
+        </tr>
+    </thead>
+    <tbody></tbody>
+</table>
 
 <canvas id="chart"></canvas>
 
 <script>
-/* ===================== NARZĘDZIA ===================== */
-function formatTimeMMSS(seconds) {
-    const m = Math.floor(seconds / 60);
-    const s = Math.floor(seconds % 60);
-    return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
-}
+/* ===================== UTIL ===================== */
+const avg = arr => arr.reduce((a,b)=>a+b,0)/arr.length;
 
-/* ===================== KONFIG ===================== */
-const ctx = document.getElementById('chart').getContext('2d');
-
-const COLORS = {
-    power: '#1f77b4',
-    hr: '#d62728',
-    cad: '#ff7f0e',
-    speed: '#2ca02c',
-    lapAvgLine: 'rgba(120,120,120,0.9)',
-    lapAvgFill: 'rgba(120,120,120,0.15)'
-};
-
+/* ===================== STATE ===================== */
 let rawData = [];
 let lapMarkers = [];
-let lapAverages = [];
+let lapSummaries = [];
 
-/* ===================== WYKRES ===================== */
-const chart = new Chart(ctx, {
+const lapTableBody = document.querySelector('#lapTable tbody');
+
+/* ===================== CHART ===================== */
+const chart = new Chart(document.getElementById('chart'), {
     type: 'line',
     data: { datasets: [] },
     options: {
-        responsive: true,
         interaction: { mode: 'nearest', intersect: false },
         plugins: {
             legend: { display: false },
-            zoom: {
-                zoom: {
-                    drag: { enabled: true, backgroundColor: 'rgba(0,0,0,0.1)' },
-                    mode: 'x'
-                }
-            },
-            tooltip: {
-                callbacks: {
-                    title: ctx => formatTimeMMSS(ctx[0].parsed.x),
-                    label: c => {
-                        const p = c.raw;
-                        const out = [];
-
-                        if (show('showPower') && p.power != null)
-                            out.push(`Moc: ${Math.round(p.power)} W`);
-                        if (show('showHR') && p.hr != null)
-                            out.push(`Tętno: ${Math.round(p.hr)} bpm`);
-                        if (show('showCad') && p.cad != null)
-                            out.push(`Kadencja: ${p.cad} rpm`);
-                        if (show('showSpeed') && p.speed != null)
-                            out.push(`Prędkość: ${p.speed.toFixed(1)} km/h`);
-
-                        const lap = lapAverages.find(l => p.x >= l.start && p.x < l.end);
-                        if (lap && show('showPower'))
-                            out.push(`Śr. Lap: ${Math.round(lap.avg)} W`);
-
-                        return out;
-                    }
-                }
-            }
+            zoom: { zoom: { drag: { enabled: true }, mode: 'x' } }
         },
         scales: {
-            x: {
-                type: 'linear',
-                title: { display: true, text: 'Czas [mm:ss]' },
-                ticks: { callback: v => formatTimeMMSS(v) }
-            },
-            yPower: {
-                position: 'left',
-                title: { display: true, text: 'Moc / inne' }
-            },
+            x: { type: 'linear', title: { display: true, text: 'Czas [s]' } },
+            yPower: { position: 'left', title: { display: true, text: 'Moc / inne' } },
             yHR: {
                 position: 'right',
                 title: { display: true, text: 'Tętno [bpm]' },
@@ -167,70 +140,88 @@ const chart = new Chart(ctx, {
 /* ===================== UI ===================== */
 const show = id => document.getElementById(id).checked;
 document.getElementById('resetZoom').onclick = () => chart.resetZoom();
-document.querySelectorAll('input, select').forEach(el => el.onchange = redraw);
+document.querySelectorAll('input,select').forEach(e => e.onchange = redraw);
 document.getElementById('fileInput').onchange = loadTCX;
 
-/* ===================== TCX ===================== */
+/* ===================== LOAD TCX ===================== */
 function loadTCX(e) {
-    const file = e.target.files[0];
-    if (!file) return;
-
     const reader = new FileReader();
     reader.onload = ev => {
-        const xml = new DOMParser().parseFromString(ev.target.result, "text/xml");
+        const xml = new DOMParser().parseFromString(ev.target.result, 'text/xml');
 
-        const laps = Array.from(xml.getElementsByTagName("Lap"))
-            .map(l => new Date(l.getAttribute("StartTime")));
-
-        const tps = xml.getElementsByTagName("Trackpoint");
-        let start = null;
         rawData = [];
+        lapMarkers = [];
+        lapSummaries = [];
+
+        const tps = xml.getElementsByTagName('Trackpoint');
+        let start = null;
 
         for (let tp of tps) {
-            const t = tp.getElementsByTagName("Time")[0];
+            const t = tp.getElementsByTagName('Time')[0];
             if (!t) continue;
-
             const time = new Date(t.textContent);
             if (!start) start = time;
 
             rawData.push({
                 x: (time - start) / 1000,
-                power: +tp.getElementsByTagName("ns3:Watts")[0]?.textContent ?? null,
-                hr: +tp.getElementsByTagName("HeartRateBpm")[0]?.getElementsByTagName("Value")[0]?.textContent ?? null,
-                cad: +tp.getElementsByTagName("Cadence")[0]?.textContent ?? null,
-                speed: tp.getElementsByTagName("ns3:Speed")[0]
-                    ? +tp.getElementsByTagName("ns3:Speed")[0].textContent * 3.6
+                power: +tp.getElementsByTagName('ns3:Watts')[0]?.textContent ?? null,
+                hr: +tp.getElementsByTagName('HeartRateBpm')[0]
+                        ?.getElementsByTagName('Value')[0]?.textContent ?? null,
+                cad: +tp.getElementsByTagName('Cadence')[0]?.textContent ?? null,
+                speed: tp.getElementsByTagName('ns3:Speed')[0]
+                    ? +tp.getElementsByTagName('ns3:Speed')[0].textContent * 3.6
                     : null
             });
         }
 
-        lapMarkers = laps.map(l => (l - start) / 1000).filter(x => x >= 0);
+        const laps = Array.from(xml.getElementsByTagName('Lap'));
+        for (let lap of laps) {
+            const startTime = new Date(lap.getAttribute('StartTime'));
+            const startX = (startTime - start) / 1000;
+            lapMarkers.push(startX);
+
+            // ===================== FIX TCX (NIC NIE LICZYMY) =====================
+            const lx = lap.getElementsByTagName('ns3:LX')[0];
+
+            lapSummaries.push({
+                avgPower: lx?.getElementsByTagName('ns3:AvgWatts')[0]?.textContent
+                    ? +lx.getElementsByTagName('ns3:AvgWatts')[0].textContent
+                    : null,
+                maxPower: lx?.getElementsByTagName('ns3:MaxWatts')[0]?.textContent
+                    ? +lx.getElementsByTagName('ns3:MaxWatts')[0].textContent
+                    : null,
+                avgHR: +lap.getElementsByTagName('AverageHeartRateBpm')[0]
+                        ?.getElementsByTagName('Value')[0]?.textContent ?? null,
+                maxHR: +lap.getElementsByTagName('MaximumHeartRateBpm')[0]
+                        ?.getElementsByTagName('Value')[0]?.textContent ?? null
+            });
+            // =====================================================================
+        }
+
         redraw();
     };
-    reader.readAsText(file);
+    reader.readAsText(e.target.files[0]);
 }
 
-/* ===================== RYSOWANIE ===================== */
+/* ===================== REDRAW ===================== */
 function redraw() {
     chart.data.datasets = [];
-    lapAverages = [];
+    lapTableBody.innerHTML = '';
     if (!rawData.length) return;
 
-    const pWindow = +powerSmooth.value;
-    const hWindow = +hrSmooth.value;
-    const tolVal = toleranceSelect.value;
-    const tolerance = tolVal === 'none' ? Infinity : (+tolVal / 100);
-    const zeroRun = +zeroSelect.value;
+    const tolerance = toleranceSelect.value === 'none'
+        ? Infinity
+        : +toleranceSelect.value / 100;
 
-    const filtered = filterZeroRuns([...rawData], zeroRun);
-
-    const smoothedPower = smoothPowerPerLap(filtered, lapMarkers, pWindow, tolerance);
-    const smoothedHR = smoothSimple(rawData, 'hr', hWindow);
+    const filtered = filterZeroRuns([...rawData], +zeroSelect.value);
+    const smoothedPower = smoothPowerPerLap(
+        filtered, lapMarkers, +powerSmooth.value, tolerance
+    );
 
     if (show('showPower')) {
         chart.data.datasets.push({
             data: smoothedPower,
-            borderColor: COLORS.power,
+            borderColor: '#1f77b4',
             borderWidth: 2,
             pointRadius: 0,
             yAxisID: 'yPower'
@@ -240,156 +231,161 @@ function redraw() {
 
     if (show('showHR')) {
         chart.data.datasets.push({
-            data: smoothedHR,
-            borderColor: COLORS.hr,
+            data: smoothSimple(rawData, 'hr', +hrSmooth.value),
+            borderColor: '#d62728',
             borderWidth: 1.5,
             pointRadius: 0,
             yAxisID: 'yHR'
         });
     }
 
-    if (show('showCad')) addSimple('cad', COLORS.cad, 'yPower');
-    if (show('showSpeed')) addSimple('speed', COLORS.speed, 'yPower');
+    if (show('showSpeed')) {
+        chart.data.datasets.push({
+            data: rawData.filter(p=>p.speed!=null).map(p=>({x:p.x,y:p.speed})),
+            borderColor: '#2ca02c',
+            borderWidth: 1.2,
+            pointRadius: 0,
+            yAxisID: 'yPower'
+        });
+    }
 
+    if (show('showCad')) {
+        chart.data.datasets.push({
+            data: rawData.filter(p=>p.cad!=null).map(p=>({x:p.x,y:p.cad})),
+            borderColor: '#ff7f0e',
+            borderWidth: 1.2,
+            pointRadius: 0,
+            yAxisID: 'yPower'
+        });
+    }
+
+    buildLapTable();
     chart.update();
 }
 
-/* ===================== POMOCNICZE ===================== */
-function addSimple(key, color, axis) {
-    chart.data.datasets.push({
-        data: rawData.filter(p => p[key] != null)
-            .map(p => ({ x: p.x, y: p[key], ...p })),
-        borderColor: color,
-        borderWidth: 1.2,
-        pointRadius: 0,
-        yAxisID: axis
+/* ===================== HR SMOOTH ===================== */
+function smoothSimple(data, key, w) {
+    if (w <= 1)
+        return data.filter(p=>p[key]!=null).map(p=>({x:p.x,y:p[key]}));
+
+    let out=[], buf=[];
+    for (let p of data) {
+        if (p[key]==null) continue;
+        buf.push(p[key]);
+        if (buf.length>w) buf.shift();
+        out.push({x:p.x,y:avg(buf)});
+    }
+    return out;
+}
+
+/* ===================== 0W FILTER ===================== */
+function filterZeroRuns(data, minRun) {
+    if (minRun===0) return data;
+    let out=[], run=[];
+    for (let p of data) {
+        if (p.power===0) run.push(p);
+        else {
+            if (run.length && run.length<minRun) out.push(...run);
+            run=[]; out.push(p);
+        }
+    }
+    if (run.length && run.length<minRun) out.push(...run);
+    return out;
+}
+
+/* ===================== POWER SMOOTH ===================== */
+function smoothPowerPerLap(data, laps, w, tol) {
+    if (w<=1)
+        return data.filter(p=>p.power!=null).map(p=>({x:p.x,y:p.power}));
+
+    const bounds=[...laps,Infinity];
+    let out=[], lap=[], i=0;
+
+    for (let p of data) {
+        if (p.x>=bounds[i+1]) {
+            out.push(...smoothLap(lap,w,tol));
+            lap=[]; i++;
+        }
+        if (p.power!=null) lap.push(p);
+    }
+    out.push(...smoothLap(lap,w,tol));
+    return out;
+}
+
+function smoothLap(lap,w,tol) {
+    return lap.map((p,i)=>{
+        const ref=p.power;
+        let vals=[];
+        for (let b=w;b>=0;b--) {
+            const s=Math.max(0,i-b);
+            const e=Math.min(lap.length,i+(w-b)+1);
+            const slice=lap.slice(s,e).map(x=>x.power);
+            if (!slice.length) continue;
+            const a=avg(slice);
+            if (tol===Infinity || Math.abs(a-ref)/Math.max(a,ref)<=tol)
+                vals.push(a);
+        }
+        return {x:p.x,y:vals.length?avg(vals):ref};
     });
 }
 
-function smoothSimple(data, key, windowSize) {
-    if (windowSize <= 1) {
-        return data.filter(p => p[key] != null)
-            .map(p => ({ x: p.x, y: p[key], ...p }));
-    }
-
-    let out = [], buf = [];
-    for (let p of data) {
-        if (p[key] == null) continue;
-        buf.push(p[key]);
-        if (buf.length > windowSize) buf.shift();
-        out.push({ x: p.x, y: buf.reduce((a,v)=>a+v,0)/buf.length, ...p });
-    }
-    return out;
-}
-
-/* ===================== FILTR 0 W ===================== */
-function filterZeroRuns(data, minRun) {
-    if (minRun === 0) return data;
-
-    let out = [], run = [];
-    for (let p of data) {
-        if (p.power === 0) run.push(p);
-        else {
-            if (run.length && run.length < minRun) out.push(...run);
-            run = [];
-            out.push(p);
-        }
-    }
-    if (run.length && run.length < minRun) out.push(...run);
-    return out;
-}
-
-/* ===================== MOC ===================== */
-function smoothPowerPerLap(data, laps, windowSize, tolerance) {
-    if (windowSize <= 1) {
-        return data.filter(p => p.power != null)
-            .map(p => ({ x: p.x, y: p.power, ...p }));
-    }
-
-    const bounds = [...laps, Infinity];
-    let out = [], lap = [], i = 0;
-
-    for (let p of data) {
-        if (p.x >= bounds[i + 1]) {
-            out.push(...smoothLap(lap, windowSize, tolerance));
-            lap = [];
-            i++;
-        }
-        if (p.power != null) lap.push(p);
-    }
-    out.push(...smoothLap(lap, windowSize, tolerance));
-    return out;
-}
-
-function smoothLap(lap, windowSize, tolerance) {
-    let res = [];
-
-    for (let i = 0; i < lap.length; i++) {
-        const ref = lap[i].power;
-        let candidates = [];
-
-        for (let back = windowSize; back >= 0; back--) {
-            const fwd = windowSize - back;
-            const s = Math.max(0, i - back);
-            const e = Math.min(lap.length, i + fwd + 1);
-            const slice = lap.slice(s, e);
-            if (!slice.length) continue;
-
-            const avg = slice.reduce((a,p)=>a+p.power,0)/slice.length;
-
-            if (tolerance === Infinity || ref == null || ref <= 0) {
-                candidates.push(avg);
-            } else {
-                const diff = Math.abs(avg-ref)/Math.max(avg,ref);
-                if (diff <= tolerance) candidates.push(avg);
-            }
-        }
-
-        res.push({
-            x: lap[i].x,
-            y: candidates.length
-                ? candidates.reduce((a,v)=>a+v,0)/candidates.length
-                : ref,
-            ...lap[i]
-        });
-    }
-    return res;
-}
-
-/* ===================== LAP AVG ===================== */
+/* ===================== LAP AVG (SZARE TŁO) ===================== */
 function drawLapAverages(points) {
-    const bounds = [...lapMarkers, Infinity];
-    let buf = [], i = 0;
-
+    const bounds=[...lapMarkers,Infinity];
+    let buf=[], i=0;
     for (let p of points) {
-        if (p.x >= bounds[i + 1]) {
-            renderLapAvg(buf, bounds[i], bounds[i + 1]);
-            buf = [];
-            i++;
+        if (p.x>=bounds[i+1]) {
+            renderLapAvg(buf,bounds[i],bounds[i+1]);
+            buf=[]; i++;
         }
         buf.push(p);
     }
-    renderLapAvg(buf, bounds[i], bounds[i + 1]);
+    renderLapAvg(buf,bounds[i],bounds[i+1]);
 }
 
-function renderLapAvg(points, start, end) {
+function renderLapAvg(points,start,end) {
     if (!points.length) return;
-
-    const avg = points.reduce((s,p)=>s+p.y,0)/points.length;
-    const realEnd = end === Infinity ? points[points.length-1].x : end;
-
-    lapAverages.push({ start, end: realEnd, avg });
-
+    const a=avg(points.map(p=>p.y));
+    const realEnd=end===Infinity?points.at(-1).x:end;
     chart.data.datasets.push({
-        data: [{x:start,y:avg},{x:realEnd,y:avg}],
-        type: 'line',
-        borderColor: COLORS.lapAvgLine,
-        backgroundColor: COLORS.lapAvgFill,
-        fill: 'origin',
-        borderWidth: 2,
-        pointRadius: 0,
-        yAxisID: 'yPower'
+        data:[{x:start,y:a},{x:realEnd,y:a}],
+        type:'line',
+        borderColor:'rgba(120,120,120,0.9)',
+        backgroundColor:'rgba(120,120,120,0.15)',
+        fill:'origin',
+        pointRadius:0,
+        borderWidth:2,
+        yAxisID:'yPower'
     });
+}
+
+/* ===================== LAP TABLE ===================== */
+function buildLapTable() {
+    lapTableBody.innerHTML = '';
+    const bounds = [...lapMarkers, Infinity];
+
+    for (let i = 0; i < lapSummaries.length; i++) {
+        const start = bounds[i];
+        const end = bounds[i + 1];
+
+        const hrLap = rawData
+            .filter(p => p.x >= start && p.x < end && p.hr != null)
+            .map(p => p.hr);
+
+        const endHR = hrLap.length ? hrLap.at(-1) : '-';
+        const s = lapSummaries[i];
+
+        lapTableBody.innerHTML += `
+            <tr>
+                <td>${i + 1}</td>
+                <td>${s.avgPower ?? '-'}</td>
+                <td>${s.maxPower ?? '-'}</td>
+                <td>${s.avgHR ?? '-'}</td>
+                <td>${s.maxHR ?? '-'}</td>
+                <td>${endHR}</td>
+                <td>${s.avgPower && s.avgHR ? (s.avgHR / s.avgPower).toFixed(3) : '-'}</td>
+            </tr>`;
+    }
 }
 </script>
 
