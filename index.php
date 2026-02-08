@@ -43,6 +43,10 @@ td:first-child, th:first-child { text-align: center; }
     z-index: 2;
     box-shadow: 2px 0 4px rgba(0,0,0,0.1);
 }
+
+#lapTable thead th {
+    text-align: center;
+}
 </style>
 </head>
 <body>
@@ -132,19 +136,19 @@ let selectedLaps = null;
 const lapLabelsPlugin = {
     id: 'lapLabels',
     afterDraw(chart) {
-        if (!lapMarkers.length) return;
+        if (!lapMarkers.length || !rawData.length) return;
 
         const { ctx, chartArea, scales } = chart;
         const xScale = scales.x;
         if (!xScale) return;
 
         ctx.save();
-        ctx.fillStyle = 'rgba(120,120,120,0.25)';
-        ctx.font = 'bold 16px Arial';
+        ctx.fillStyle = 'rgba(120,120,120,0.35)';
+        ctx.font = 'bold 14px Arial';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'bottom';
 
-        const bounds = [...lapMarkers, rawData.at(-1)?.x ?? 0];
+        const bounds = [...lapMarkers, rawData.at(-1).x];
 
         for (let i = 0; i < lapMarkers.length; i++) {
             const start = bounds[i];
@@ -154,7 +158,7 @@ const lapLabelsPlugin = {
             if (mid < xScale.min || mid > xScale.max) continue;
 
             const x = xScale.getPixelForValue(mid);
-            const y = chartArea.bottom - 6;   // 👈 tuż nad osią X
+            const y = chartArea.bottom - 4; // tuż nad osią X
 
             ctx.fillText(`Lap ${i + 1}`, x, y);
         }
@@ -162,7 +166,6 @@ const lapLabelsPlugin = {
         ctx.restore();
     }
 };
-
 
 /* ===================== CHART ===================== */
 const chart = new Chart(document.getElementById('chart'), {
@@ -224,7 +227,13 @@ speed:tp.getElementsByTagName('ns3:Speed')[0]
 for(const lap of xml.getElementsByTagName('Lap')){
 const st=new Date(lap.getAttribute('StartTime'));
 lapMarkers.push((st-start)/1000);
-lapSummaries.push({});
+const lx=lap.getElementsByTagName('ns3:LX')[0];
+lapSummaries.push({
+avgPower: lx?.getElementsByTagName('ns3:AvgWatts')[0]?.textContent ? +lx.getElementsByTagName('ns3:AvgWatts')[0].textContent : null,
+maxPower: lx?.getElementsByTagName('ns3:MaxWatts')[0]?.textContent ? +lx.getElementsByTagName('ns3:MaxWatts')[0].textContent : null,
+avgHR: +lap.getElementsByTagName('AverageHeartRateBpm')[0]?.getElementsByTagName('Value')[0]?.textContent ?? null,
+maxHR: +lap.getElementsByTagName('MaximumHeartRateBpm')[0]?.getElementsByTagName('Value')[0]?.textContent ?? null
+});
 }
 
 buildLapSelect();
@@ -241,7 +250,7 @@ selectedLaps=null;
 
 const bounds=[...lapMarkers,Infinity];
 
-for(let i=0;i<lapMarkers.length;i++){
+for(let i=0;i<lapSummaries.length;i++){
 const start=bounds[i];
 const end=bounds[i+1];
 const pts=rawData.filter(p=>p.x>=start && p.x<end && p.power!=null);
@@ -415,10 +424,10 @@ const thead=table.querySelector('thead');
 const tbody=table.querySelector('tbody');
 
 thead.innerHTML=''; tbody.innerHTML='';
-if(!lapMarkers.length) return;
+if(!lapSummaries.length) return;
 
 const visible = selectedLaps === null
-? lapMarkers.map((_,i)=>i)
+? lapSummaries.map((_,i)=>i)
 : selectedLaps;
 
 const bounds=[...lapMarkers,Infinity];
@@ -429,10 +438,16 @@ const start=bounds[i];
 const end=bounds[i+1];
 const hrLap=rawData.filter(p=>p.x>=start && p.x<end && p.hr!=null).map(p=>p.hr);
 const endHR=hrLap.length?hrLap.at(-1):'-';
+const s=lapSummaries[i];
 
 laps.push({
 label:`Lap ${i+1}`,
-endHR
+avgPower:s.avgPower ?? '-',
+maxPower:s.maxPower ?? '-',
+avgHR:s.avgHR ?? '-',
+maxHR:s.maxHR ?? '-',
+endHR,
+hrw:(s.avgPower && s.avgHR)?(s.avgHR/s.avgPower).toFixed(3):'-'
 });
 }
 
@@ -441,13 +456,23 @@ for(const lap of laps) head+=`<th>${lap.label}</th>`;
 head+=`</tr>`;
 thead.innerHTML=head;
 
-let row=`<tr><th>HR koniec [bpm]</th>`;
-for(const lap of laps) row+=`<td>${lap.endHR}</td>`;
-row+=`</tr>`;
-tbody.innerHTML=row;
+const rows=[
+{label:'Śr. moc [W]',key:'avgPower'},
+{label:'Max moc [W]',key:'maxPower'},
+{label:'Śr. HR [bpm]',key:'avgHR'},
+{label:'Max HR [bpm]',key:'maxHR'},
+{label:'HR koniec [bpm]',key:'endHR'},
+{label:'HR / W',key:'hrw'}
+];
+
+for(const row of rows){
+let html=`<tr><th>${row.label}</th>`;
+for(const lap of laps) html+=`<td>${lap[row.key]}</td>`;
+html+=`</tr>`;
+tbody.innerHTML+=html;
+}
 }
 </script>
 
 </body>
 </html>
-
