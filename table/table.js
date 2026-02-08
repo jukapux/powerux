@@ -10,7 +10,7 @@ export function buildLapTable({
     const bounds = [...lapMarkers, Infinity];
     const lapCount = lapSummaries.length;
 
-    // ===================== PRZYGOTOWANIE DANYCH LAPÓW =====================
+    // ===================== ZBIERANIE DANYCH LAPÓW =====================
     const laps = [];
 
     for (let i = 0; i < lapCount; i++) {
@@ -38,9 +38,16 @@ export function buildLapTable({
         });
     }
 
-    // ===================== DEFINICJA WIERSZY (METRYK) =====================
+    // ===================== PIERWSZY WIERSZ = LAPY =====================
+    let headerRow = `<tr><th>Lap</th>`;
+    for (const lap of laps) {
+        headerRow += `<td>${lap.label}</td>`;
+    }
+    headerRow += `</tr>`;
+    lapTableBody.innerHTML += headerRow;
+
+    // ===================== WIERSZE METRYK =====================
     const rows = [
-        { label: 'Lap', key: 'label' },
         { label: 'Śr. moc', key: 'avgPower' },
         { label: 'Max moc', key: 'maxPower' },
         { label: 'Śr. HR', key: 'avgHR' },
@@ -49,14 +56,11 @@ export function buildLapTable({
         { label: 'HR / W', key: 'hrw' }
     ];
 
-    // ===================== BUDOWANIE TABELI =====================
     for (const row of rows) {
         let html = `<tr><th>${row.label}</th>`;
-
         for (const lap of laps) {
             html += `<td>${lap[row.key]}</td>`;
         }
-
         html += `</tr>`;
         lapTableBody.innerHTML += html;
     }
