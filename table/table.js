@@ -1,4 +1,5 @@
 // table/table.js
+
 export function buildLapTable({
     lapMarkers,
     lapSummaries,
@@ -10,6 +11,9 @@ export function buildLapTable({
 
     thead.innerHTML = '';
     tbody.innerHTML = '';
+
+    // ⛑️ brak lapów w TCX
+    if (!lapSummaries || !lapSummaries.length) return;
 
     const bounds = [...lapMarkers, Infinity];
     const lapCount = lapSummaries.length;
@@ -42,7 +46,7 @@ export function buildLapTable({
         });
     }
 
-    // ===================== NAGŁÓWEK KOLUMN =====================
+    // ===================== NAGŁÓWEK =====================
     let headHtml = `<tr><th></th>`;
     for (const lap of laps) {
         headHtml += `<th>${lap.label}</th>`;
