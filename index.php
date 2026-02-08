@@ -200,7 +200,53 @@ data:{datasets:[]},
 options:{
 maintainAspectRatio:false,
 interaction:{mode:'nearest',intersect:false},
-plugins:{legend:{display:false},zoom:{zoom:{drag:{enabled:true},mode:'x'}}},
+
+plugins:{
+    legend:{display:false},
+    zoom:{zoom:{drag:{enabled:true},mode:'x'}},
+    tooltip:{
+        enabled:true,
+        mode:'nearest',
+        intersect:false,
+        callbacks:{
+            title(items){
+                if (!items.length) return '';
+                const t = items[0].parsed.x;
+                return `Czas: ${formatTime(t)}`;
+            },
+            label(){
+                return null; // WYŁĄCZAMY domyślne etykiety
+            },
+            afterBody(items){
+                if (!items.length) return [];
+                const t = items[0].parsed.x;
+
+                // znajdź punkt z rawData najbliższy temu czasowi
+                const p = rawData.reduce((a,b)=>
+                    Math.abs(b.x - t) < Math.abs(a.x - t) ? b : a
+                );
+
+                const lines = [];
+
+                if (show('showPower') && p.power != null)
+                    lines.push(`Moc: ${Math.round(p.power)} W`);
+
+                if (show('showHR') && p.hr != null)
+                    lines.push(`Tętno: ${Math.round(p.hr)} bpm`);
+
+                if (show('showSpeed') && p.speed != null)
+                    lines.push(`Prędkość: ${Math.round(p.speed)} km/h`);
+
+                if (show('showCad') && p.cad != null)
+                    lines.push(`Kadencja: ${Math.round(p.cad)} rpm`);
+
+                return lines;
+            }
+        }
+    }
+},
+
+
 scales:{
 x:{type:'linear',title:{display:true,text:'Czas'},ticks:{callback:v=>formatTime(v)}},
 yPower:{position:'left',title:{display:true,text:'Moc / inne'}},
