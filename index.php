@@ -16,6 +16,10 @@ button { margin-left: 15px; padding: 4px 10px; }
 .chart-wrap { height: 300px; }
 canvas { max-width: 100%; }
 
+select[multiple] {
+    padding: 4px;
+}
+
 table {
     border-collapse: collapse;
     margin-bottom: 15px;
@@ -106,6 +110,12 @@ td:first-child, th:first-child { text-align: center; }
 <button id="resetZoom">Zeruj przybliżenie</button>
 </div>
 
+<!-- ===== MULTISELECT OKRĄŻEŃ ===== -->
+<div class="controls">
+<label>Widoczne okrążenia:</label><br>
+<select id="lapSelect" multiple size="6" style="min-width:380px"></select>
+</div>
+
 <table id="lapTable">
 <thead></thead>
 <tbody></tbody>
@@ -123,6 +133,7 @@ const avg = arr => arr.length ? arr.reduce((a,b)=>a+b,0)/arr.length : 0;
 let rawData = [];
 let lapMarkers = [];
 let lapSummaries = [];
+let selectedLaps = null;
 
 /* ===================== CHART ===================== */
 const chart = new Chart(document.getElementById('chart'), {
@@ -191,9 +202,42 @@ avgHR: +lap.getElementsByTagName('AverageHeartRateBpm')[0]?.getElementsByTagName
 maxHR: +lap.getElementsByTagName('MaximumHeartRateBpm')[0]?.getElementsByTagName('Value')[0]?.textContent ?? null
 });
 }
+
+buildLapSelect();
 redraw();
 };
 reader.readAsText(e.target.files[0]);
+}
+
+/* ===================== LAP MULTISELECT ===================== */
+function buildLapSelect(){
+const sel=document.getElementById('lapSelect');
+sel.innerHTML='';
+selectedLaps=null;
+
+const bounds=[...lapMarkers,Infinity];
+
+for(let i=0;i<lapSummaries.length;i++){
+const start=bounds[i];
+const end=bounds[i+1];
+const pts=rawData.filter(p=>p.x>=start && p.x<end && p.power!=null);
+const avgP=pts.length?Math.round(avg(pts.map(p=>p.power))):'-';
+
+const dur=Math.round((end===Infinity?pts.at(-1)?.x:end)-start);
+const mm=String(Math.floor(dur/60)).padStart(2,'0');
+const ss=String(dur%60).padStart(2,'0');
+
+const opt=document.createElement('option');
+opt.value=i;
+opt.selected=true;
+opt.textContent=`Lap ${i+1} | ${mm}:${ss} | ${avgP} W`;
+sel.appendChild(opt);
+}
+
+sel.onchange=()=>{
+selectedLaps=Array.from(sel.selectedOptions).map(o=>+o.value);
+redraw();
+};
 }
 
 /* ===================== REDRAW ===================== */
@@ -253,7 +297,7 @@ buildLapTable();
 chart.update();
 }
 
-/* ===================== SMOOTHING / FILTERS ===================== */
+/* ===================== HELPERS ===================== */
 function smoothSimple(data,key,w){
 if(w<=1) return data.filter(p=>p[key]!=null).map(p=>({x:p.x,y:p[key]}));
 let out=[],buf=[];
@@ -340,7 +384,7 @@ yAxisID:'yPower'
 });
 }
 
-/* ===================== LAP TABLE (SCALONE) ===================== */
+/* ===================== LAP TABLE ===================== */
 function buildLapTable(){
 const table=document.getElementById('lapTable');
 const thead=table.querySelector('thead');
@@ -349,10 +393,14 @@ const tbody=table.querySelector('tbody');
 thead.innerHTML=''; tbody.innerHTML='';
 if(!lapSummaries.length) return;
 
+const visible = selectedLaps === null
+? lapSummaries.map((_,i)=>i)
+: selectedLaps;
+
 const bounds=[...lapMarkers,Infinity];
 const laps=[];
 
-for(let i=0;i<lapSummaries.length;i++){
+for(const i of visible){
 const start=bounds[i];
 const end=bounds[i+1];
 const hrLap=rawData.filter(p=>p.x>=start && p.x<end && p.hr!=null).map(p=>p.hr);
