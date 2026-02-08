@@ -65,6 +65,7 @@ td:first-child, th:first-child { text-align: center; }
 </select>
 </label>
 
+
 <label>Tolerancja:
 <select id="toleranceSelect">
 <option value="none">brak</option>
@@ -87,6 +88,14 @@ td:first-child, th:first-child { text-align: center; }
 <option value="5" selected>5 s</option>
 <option value="10">10 s</option>
 <option value="30">30 s</option>
+</select>
+</label>
+
+<label>Przesunięcie HR:
+<select id="hrShift">
+    <option value="15">15 s</option>
+    <option value="30" selected>30 s</option>
+    <option value="45">45 s</option>
 </select>
 </label>
 
@@ -522,11 +531,14 @@ function buildLapTable(){
     const bounds = [...lapMarkers, Infinity];
     const laps = [];
 
+    // ===== POBRANIE PRZESUNIĘCIA HR =====
+    const hrShift = +document.getElementById('hrShift').value; // sekundy
+
     for (const i of visible) {
         const start = bounds[i];
         const end = bounds[i + 1];
 
-        // ===== standard HR =====
+        // ===== STANDARD HR =====
         const hrLap = rawData
             .filter(p => p.x >= start && p.x < end && p.hr != null)
             .map(p => p.hr);
@@ -535,9 +547,9 @@ function buildLapTable(){
             ? Math.round(avg(hrLap))
             : '-';
 
-        // ===== SHIFTED AVG HR (+30s) =====
-        const shiftStart = start + 30;
-        const shiftEnd = end + 30;
+        // ===== PRZESUNIĘTE HR =====
+        const shiftStart = start + hrShift;
+        const shiftEnd   = end   + hrShift;
 
         const hrShifted = rawData
             .filter(p => p.x >= shiftStart && p.x < shiftEnd && p.hr != null)
@@ -576,7 +588,7 @@ function buildLapTable(){
         { label: 'Śr. moc [W]', key: 'avgPower' },
         { label: 'Max moc [W]', key: 'maxPower' },
         { label: 'Śr. HR [bpm]', key: 'avgHR' },
-        { label: 'Przesunięte Śr. HR [bpm]', key: 'shiftedAvgHR' },
+        { label: `Przesunięte Śr. HR (+${hrShift}s)`, key: 'shiftedAvgHR' },
         { label: 'Max HR [bpm]', key: 'maxHR' },
         { label: 'HR koniec [bpm]', key: 'endHR' },
         { label: 'HR / W', key: 'hrw' }
@@ -591,6 +603,7 @@ function buildLapTable(){
         tbody.innerHTML += html;
     }
 }
+
 
 </script>
 
