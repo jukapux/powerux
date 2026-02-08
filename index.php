@@ -140,9 +140,9 @@ const lapLabelsPlugin = {
 
         ctx.save();
         ctx.fillStyle = 'rgba(120,120,120,0.25)';
-        ctx.font = 'bold 24px Arial';
+        ctx.font = 'bold 16px Arial';
         ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
+        ctx.textBaseline = 'bottom';
 
         const bounds = [...lapMarkers, rawData.at(-1)?.x ?? 0];
 
@@ -154,7 +154,7 @@ const lapLabelsPlugin = {
             if (mid < xScale.min || mid > xScale.max) continue;
 
             const x = xScale.getPixelForValue(mid);
-            const y = (chartArea.top + chartArea.bottom) / 2;
+            const y = chartArea.bottom - 6;   // 👈 tuż nad osią X
 
             ctx.fillText(`Lap ${i + 1}`, x, y);
         }
@@ -162,6 +162,7 @@ const lapLabelsPlugin = {
         ctx.restore();
     }
 };
+
 
 /* ===================== CHART ===================== */
 const chart = new Chart(document.getElementById('chart'), {
@@ -449,3 +450,4 @@ tbody.innerHTML=row;
 
 </body>
 </html>
+
