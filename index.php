@@ -507,59 +507,91 @@ yAxisID:'yPower'
 
 /* ===================== LAP TABLE ===================== */
 function buildLapTable(){
-const table=document.getElementById('lapTable');
-const thead=table.querySelector('thead');
-const tbody=table.querySelector('tbody');
+    const table = document.getElementById('lapTable');
+    const thead = table.querySelector('thead');
+    const tbody = table.querySelector('tbody');
 
-thead.innerHTML=''; tbody.innerHTML='';
-if(!lapSummaries.length) return;
+    thead.innerHTML = '';
+    tbody.innerHTML = '';
+    if (!lapSummaries.length) return;
 
-const visible = selectedLaps === null
-? lapSummaries.map((_,i)=>i)
-: selectedLaps;
+    const visible = selectedLaps === null
+        ? lapSummaries.map((_, i) => i)
+        : selectedLaps;
 
-const bounds=[...lapMarkers,Infinity];
-const laps=[];
+    const bounds = [...lapMarkers, Infinity];
+    const laps = [];
 
-for(const i of visible){
-const start=bounds[i];
-const end=bounds[i+1];
-const hrLap=rawData.filter(p=>p.x>=start && p.x<end && p.hr!=null).map(p=>p.hr);
-const endHR=hrLap.length?hrLap.at(-1):'-';
-const s=lapSummaries[i];
+    for (const i of visible) {
+        const start = bounds[i];
+        const end = bounds[i + 1];
 
-laps.push({
-label:`Lap ${i+1}`,
-avgPower:s.avgPower ?? '-',
-maxPower:s.maxPower ?? '-',
-avgHR:s.avgHR ?? '-',
-maxHR:s.maxHR ?? '-',
-endHR,
-hrw:(s.avgPower && s.avgHR)?(s.avgHR/s.avgPower).toFixed(3):'-'
-});
+        // ===== standard HR =====
+        const hrLap = rawData
+            .filter(p => p.x >= start && p.x < end && p.hr != null)
+            .map(p => p.hr);
+
+        const avgHR = hrLap.length
+            ? Math.round(avg(hrLap))
+            : '-';
+
+        // ===== SHIFTED AVG HR (+30s) =====
+        const shiftStart = start + 30;
+        const shiftEnd = end + 30;
+
+        const hrShifted = rawData
+            .filter(p => p.x >= shiftStart && p.x < shiftEnd && p.hr != null)
+            .map(p => p.hr);
+
+        const shiftedAvgHR = hrShifted.length
+            ? Math.round(avg(hrShifted))
+            : '-';
+
+        const endHR = hrLap.length ? hrLap.at(-1) : '-';
+        const s = lapSummaries[i];
+
+        laps.push({
+            label: `Lap ${i + 1}`,
+            avgPower: s.avgPower ?? '-',
+            maxPower: s.maxPower ?? '-',
+            avgHR,
+            shiftedAvgHR,
+            maxHR: s.maxHR ?? '-',
+            endHR,
+            hrw:
+                s.avgPower && avgHR !== '-'
+                    ? (avgHR / s.avgPower).toFixed(3)
+                    : '-'
+        });
+    }
+
+    // ===== THEAD =====
+    let head = `<tr><th></th>`;
+    for (const lap of laps) head += `<th>${lap.label}</th>`;
+    head += `</tr>`;
+    thead.innerHTML = head;
+
+    // ===== WIERSZE =====
+    const rows = [
+        { label: 'Śr. moc [W]', key: 'avgPower' },
+        { label: 'Max moc [W]', key: 'maxPower' },
+        { label: 'Śr. HR [bpm]', key: 'avgHR' },
+        { label: 'Przesunięte Śr. HR [bpm]', key: 'shiftedAvgHR' },
+        { label: 'Max HR [bpm]', key: 'maxHR' },
+        { label: 'HR koniec [bpm]', key: 'endHR' },
+        { label: 'HR / W', key: 'hrw' }
+    ];
+
+    for (const row of rows) {
+        let html = `<tr><th>${row.label}</th>`;
+        for (const lap of laps) {
+            html += `<td>${lap[row.key]}</td>`;
+        }
+        html += `</tr>`;
+        tbody.innerHTML += html;
+    }
 }
 
-let head=`<tr><th></th>`;
-for(const lap of laps) head+=`<th>${lap.label}</th>`;
-head+=`</tr>`;
-thead.innerHTML=head;
-
-const rows=[
-{label:'Śr. moc [W]',key:'avgPower'},
-{label:'Max moc [W]',key:'maxPower'},
-{label:'Śr. HR [bpm]',key:'avgHR'},
-{label:'Max HR [bpm]',key:'maxHR'},
-{label:'HR koniec [bpm]',key:'endHR'},
-{label:'HR / W',key:'hrw'}
-];
-
-for(const row of rows){
-let html=`<tr><th>${row.label}</th>`;
-for(const lap of laps) html+=`<td>${lap[row.key]}</td>`;
-html+=`</tr>`;
-tbody.innerHTML+=html;
-}
-}
 </script>
 
 </body>
