@@ -126,6 +126,17 @@ td:first-child, th:first-child { text-align: center; }
 /* ===================== UTIL ===================== */
 const avg = arr => arr.length ? arr.reduce((a,b)=>a+b,0)/arr.length : 0;
 
+function formatTime(sec) {
+    sec = Math.round(sec);
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    const s = sec % 60;
+    if (h > 0) {
+        return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+    }
+    return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+}
+
 /* ===================== STATE ===================== */
 let rawData = [];
 let lapMarkers = [];
@@ -167,7 +178,7 @@ const lapLabelsPlugin = {
     }
 };
 
-/* ===================== LAP HIGHLIGHT (NOWE) ===================== */
+/* ===================== LAP HIGHLIGHT ===================== */
 const lapHighlightPlugin = {
     id: 'lapHighlight',
     beforeDraw(chart) {
@@ -178,7 +189,7 @@ const lapHighlightPlugin = {
         if (!xScale) return;
 
         ctx.save();
-        ctx.fillStyle = 'rgba(120,120,120,0.20)'; // 👈 delikatnie ciemniejsze
+        ctx.fillStyle = 'rgba(120,120,120,0.20)';
 
         const bounds = [...lapMarkers, rawData.at(-1).x];
 
@@ -215,12 +226,19 @@ legend:{display:false},
 zoom:{zoom:{drag:{enabled:true},mode:'x'}}
 },
 scales:{
-x:{type:'linear',title:{display:true,text:'Czas [s]'}},
+x:{
+type:'linear',
+title:{display:true,text:'Czas'},
+ticks:{
+callback:(value)=>formatTime(value)
+}
+},
 yPower:{position:'left',title:{display:true,text:'Moc / inne'}},
 yHR:{
 position:'right',
 title:{display:true,text:'Tętno [bpm]'},
 grid:{drawOnChartArea:false}
+}
 }
 }
 },
