@@ -117,11 +117,6 @@ td:first-child, th:first-child { text-align: center; }
 <button id="resetZoom">Zeruj przybliżenie</button>
 </div>
 
-<div class="controls">
-<label>Widoczne okrążenia:</label><br>
-<select id="lapSelect" multiple size="6" style="min-width:380px"></select>
-</div>
-
 <table id="lapTable">
 <thead></thead>
 <tbody></tbody>
@@ -265,11 +260,73 @@ yHR:{position:'right',title:{display:true,text:'Tętno [bpm]'},grid:{drawOnChart
 plugins:[lapHighlightPlugin,lapLabelsPlugin]
 });
 
+// ===== ODRÓŻNIANIE ZOOM DRAG vs KLIK =====
+let wasDragging = false;
+
+chart.options.plugins.zoom.zoom.onZoomComplete = () => {
+    wasDragging = true;
+};
+
+
 /* ===================== UI ===================== */
 const show=id=>document.getElementById(id).checked;
 document.getElementById('resetZoom').onclick=()=>chart.resetZoom();
 document.querySelectorAll('input,select').forEach(e=>e.onchange=redraw);
 document.getElementById('fileInput').onchange=loadTCX;
+
+
+let lastClickedLap = null;
+
+
+document.getElementById('chart').onclick = function (evt) {
+    if (wasDragging) {
+        wasDragging = false;
+        return;
+    }
+
+    const rect = evt.target.getBoundingClientRect();
+    const xPixel = evt.clientX - rect.left;
+
+    const xValue = chart.scales.x.getValueForPixel(xPixel);
+    if (xValue == null) return;
+
+    // znajdź numer okrążenia
+    const bounds = [...lapMarkers, Infinity];
+    let lapIndex = null;
+
+    for (let i = 0; i < lapMarkers.length; i++) {
+        if (xValue >= bounds[i] && xValue < bounds[i + 1]) {
+            lapIndex = i;
+            break;
+        }
+    }
+    if (lapIndex === null) return;
+
+    // ===== LOGIKA WYBORU =====
+    if (!evt.ctrlKey && !evt.shiftKey) {
+        // zwykły klik → tylko to okrążenie
+        selectedLaps = [lapIndex];
+    }
+    else if (evt.ctrlKey) {
+        // CTRL + klik → toggle
+        selectedLaps ??= [];
+        if (selectedLaps.includes(lapIndex))
+            selectedLaps = selectedLaps.filter(i => i !== lapIndex);
+        else
+            selectedLaps.push(lapIndex);
+    }
+    else if (evt.shiftKey && lastClickedLap !== null) {
+        // SHIFT + klik → zakres
+        const from = Math.min(lastClickedLap, lapIndex);
+        const to   = Math.max(lastClickedLap, lapIndex);
+        selectedLaps = [];
+        for (let i = from; i <= to; i++) selectedLaps.push(i);
+    }
+
+    lastClickedLap = lapIndex;
+    redraw();
+};
+
 
 /* ===================== LOAD TCX + RESZTA KODU ===================== */
 function loadTCX(e){
@@ -310,42 +367,11 @@ maxHR: +lap.getElementsByTagName('MaximumHeartRateBpm')[0]?.getElementsByTagName
 });
 }
 
-buildLapSelect();
 redraw();
 };
 reader.readAsText(e.target.files[0]);
 }
 
-/* ===================== LAP MULTISELECT ===================== */
-function buildLapSelect(){
-const sel=document.getElementById('lapSelect');
-sel.innerHTML='';
-selectedLaps=null;
-
-const bounds=[...lapMarkers,Infinity];
-
-for(let i=0;i<lapSummaries.length;i++){
-const start=bounds[i];
-const end=bounds[i+1];
-const pts=rawData.filter(p=>p.x>=start && p.x<end && p.power!=null);
-const avgP=pts.length?Math.round(avg(pts.map(p=>p.power))):'-';
-
-const dur=Math.round((end===Infinity?pts.at(-1)?.x:end)-start);
-const mm=String(Math.floor(dur/60)).padStart(2,'0');
-const ss=String(dur%60).padStart(2,'0');
-
-const opt=document.createElement('option');
-opt.value=i;
-opt.selected=true;
-opt.textContent=`Lap ${i+1} | ${mm}:${ss} | ${avgP} W`;
-sel.appendChild(opt);
-}
-
-sel.onchange=()=>{
-selectedLaps=Array.from(sel.selectedOptions).map(o=>+o.value);
-redraw();
-};
-}
 
 /* ===================== REDRAW ===================== */
 function redraw() {
