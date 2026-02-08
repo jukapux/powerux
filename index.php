@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Analiza treningu – TCX</title>
-    
+
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 
@@ -88,25 +88,13 @@
 </div>
 
 <table id="lapTable">
-    <thead>
-        <tr>
-            <th>Lap</th>
-            <th>Śr. moc</th>
-            <th>Max moc</th>
-            <th>Śr. HR</th>
-            <th>Max HR</th>
-            <th>HR koniec</th>
-            <th>HR / W</th>
-        </tr>
-    </thead>
     <tbody></tbody>
 </table>
 
+
 <canvas id="chart"></canvas>
 
-<script type="module">
-import { buildLapTable } from './table/table.js';
-
+<script>
 /* ===================== UTIL ===================== */
 const avg = arr => arr.reduce((a,b)=>a+b,0)/arr.length;
 
@@ -182,7 +170,9 @@ function loadTCX(e) {
             const startX = (startTime - start) / 1000;
             lapMarkers.push(startX);
 
+            // ===================== FIX TCX (NIC NIE LICZYMY) =====================
             const lx = lap.getElementsByTagName('ns3:LX')[0];
+
             lapSummaries.push({
                 avgPower: lx?.getElementsByTagName('ns3:AvgWatts')[0]?.textContent
                     ? +lx.getElementsByTagName('ns3:AvgWatts')[0].textContent
@@ -195,6 +185,7 @@ function loadTCX(e) {
                 maxHR: +lap.getElementsByTagName('MaximumHeartRateBpm')[0]
                         ?.getElementsByTagName('Value')[0]?.textContent ?? null
             });
+            // =====================================================================
         }
 
         redraw();
@@ -208,14 +199,183 @@ function redraw() {
     lapTableBody.innerHTML = '';
     if (!rawData.length) return;
 
-    buildLapTable({
-        lapMarkers,
-        lapSummaries,
-        rawData,
-        lapTableBody
-    });
+    const tolerance = toleranceSelect.value === 'none'
+        ? Infinity
+        : +toleranceSelect.value / 100;
 
+    const filtered = filterZeroRuns([...rawData], +zeroSelect.value);
+    const smoothedPower = smoothPowerPerLap(
+        filtered, lapMarkers, +powerSmooth.value, tolerance
+    );
+
+    if (show('showPower')) {
+        chart.data.datasets.push({
+            data: smoothedPower,
+            borderColor: '#1f77b4',
+            borderWidth: 2,
+            pointRadius: 0,
+            yAxisID: 'yPower'
+        });
+        drawLapAverages(smoothedPower);
+    }
+
+    if (show('showHR')) {
+        chart.data.datasets.push({
+            data: smoothSimple(rawData, 'hr', +hrSmooth.value),
+            borderColor: '#d62728',
+            borderWidth: 1.5,
+            pointRadius: 0,
+            yAxisID: 'yHR'
+        });
+    }
+
+    if (show('showSpeed')) {
+        chart.data.datasets.push({
+            data: rawData.filter(p=>p.speed!=null).map(p=>({x:p.x,y:p.speed})),
+            borderColor: '#2ca02c',
+            borderWidth: 1.2,
+            pointRadius: 0,
+            yAxisID: 'yPower'
+        });
+    }
+
+    if (show('showCad')) {
+        chart.data.datasets.push({
+            data: rawData.filter(p=>p.cad!=null).map(p=>({x:p.x,y:p.cad})),
+            borderColor: '#ff7f0e',
+            borderWidth: 1.2,
+            pointRadius: 0,
+            yAxisID: 'yPower'
+        });
+    }
+
+    buildLapTable();
     chart.update();
+}
+
+/* ===================== HR SMOOTH ===================== */
+function smoothSimple(data, key, w) {
+    if (w <= 1)
+        return data.filter(p=>p[key]!=null).map(p=>({x:p.x,y:p[key]}));
+
+    let out=[], buf=[];
+    for (let p of data) {
+        if (p[key]==null) continue;
+        buf.push(p[key]);
+        if (buf.length>w) buf.shift();
+        out.push({x:p.x,y:avg(buf)});
+    }
+    return out;
+}
+
+/* ===================== 0W FILTER ===================== */
+function filterZeroRuns(data, minRun) {
+    if (minRun===0) return data;
+    let out=[], run=[];
+    for (let p of data) {
+        if (p.power===0) run.push(p);
+        else {
+            if (run.length && run.length<minRun) out.push(...run);
+            run=[]; out.push(p);
+        }
+    }
+    if (run.length && run.length<minRun) out.push(...run);
+    return out;
+}
+
+/* ===================== POWER SMOOTH ===================== */
+function smoothPowerPerLap(data, laps, w, tol) {
+    if (w<=1)
+        return data.filter(p=>p.power!=null).map(p=>({x:p.x,y:p.power}));
+
+    const bounds=[...laps,Infinity];
+    let out=[], lap=[], i=0;
+
+    for (let p of data) {
+        if (p.x>=bounds[i+1]) {
+            out.push(...smoothLap(lap,w,tol));
+            lap=[]; i++;
+        }
+        if (p.power!=null) lap.push(p);
+    }
+    out.push(...smoothLap(lap,w,tol));
+    return out;
+}
+
+function smoothLap(lap,w,tol) {
+    return lap.map((p,i)=>{
+        const ref=p.power;
+        let vals=[];
+        for (let b=w;b>=0;b--) {
+            const s=Math.max(0,i-b);
+            const e=Math.min(lap.length,i+(w-b)+1);
+            const slice=lap.slice(s,e).map(x=>x.power);
+            if (!slice.length) continue;
+            const a=avg(slice);
+            if (tol===Infinity || Math.abs(a-ref)/Math.max(a,ref)<=tol)
+                vals.push(a);
+        }
+        return {x:p.x,y:vals.length?avg(vals):ref};
+    });
+}
+
+/* ===================== LAP AVG (SZARE TŁO) ===================== */
+function drawLapAverages(points) {
+    const bounds=[...lapMarkers,Infinity];
+    let buf=[], i=0;
+    for (let p of points) {
+        if (p.x>=bounds[i+1]) {
+            renderLapAvg(buf,bounds[i],bounds[i+1]);
+            buf=[]; i++;
+        }
+        buf.push(p);
+    }
+    renderLapAvg(buf,bounds[i],bounds[i+1]);
+}
+
+function renderLapAvg(points,start,end) {
+    if (!points.length) return;
+    const a=avg(points.map(p=>p.y));
+    const realEnd=end===Infinity?points.at(-1).x:end;
+    chart.data.datasets.push({
+        data:[{x:start,y:a},{x:realEnd,y:a}],
+        type:'line',
+        borderColor:'rgba(120,120,120,0.9)',
+        backgroundColor:'rgba(120,120,120,0.15)',
+        fill:'origin',
+        pointRadius:0,
+        borderWidth:2,
+        yAxisID:'yPower'
+    });
+}
+
+/* ===================== LAP TABLE ===================== */
+function buildLapTable() {
+    lapTableBody.innerHTML = '';
+    const bounds = [...lapMarkers, Infinity];
+
+    for (let i = 0; i < lapSummaries.length; i++) {
+        const start = bounds[i];
+        const end = bounds[i + 1];
+
+        const hrLap = rawData
+            .filter(p => p.x >= start && p.x < end && p.hr != null)
+            .map(p => p.hr);
+
+        const endHR = hrLap.length ? hrLap.at(-1) : '-';
+        const s = lapSummaries[i];
+
+        lapTableBody.innerHTML += `
+            <tr>
+                <td>${i + 1}</td>
+                <td>${s.avgPower ?? '-'}</td>
+                <td>${s.maxPower ?? '-'}</td>
+                <td>${s.avgHR ?? '-'}</td>
+                <td>${s.maxHR ?? '-'}</td>
+                <td>${endHR}</td>
+                <td>${s.avgPower && s.avgHR ? (s.avgHR / s.avgPower).toFixed(3) : '-'}</td>
+            </tr>`;
+    }
 }
 </script>
 
