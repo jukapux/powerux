@@ -3,30 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <title>Analiza treningu – TCX</title>
-
+    <link rel="stylesheet" href="table/table.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
-
-    <style>
-        body { font-family: Arial, sans-serif; margin: 30px; }
-        .controls { margin-bottom: 12px; }
-        label { margin-right: 15px; }
-        button { margin-left: 15px; padding: 4px 10px; }
-        canvas { max-width: 100%; }
-
-        table {
-            border-collapse: collapse;
-            margin-bottom: 15px;
-            font-size: 14px;
-        }
-        th, td {
-            border: 1px solid #ccc;
-            padding: 4px 8px;
-            text-align: right;
-        }
-        th { background: #f0f0f0; }
-        td:first-child, th:first-child { text-align: center; }
-    </style>
 </head>
 <body>
 
