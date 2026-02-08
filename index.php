@@ -132,7 +132,7 @@ let lapMarkers = [];
 let lapSummaries = [];
 let selectedLaps = null;
 
-/* ===================== LAP LABELS PLUGIN ===================== */
+/* ===================== LAP LABELS ===================== */
 const lapLabelsPlugin = {
     id: 'lapLabels',
     afterDraw(chart) {
@@ -158,9 +158,45 @@ const lapLabelsPlugin = {
             if (mid < xScale.min || mid > xScale.max) continue;
 
             const x = xScale.getPixelForValue(mid);
-            const y = chartArea.bottom - 4; // tuż nad osią X
+            const y = chartArea.bottom - 4;
 
             ctx.fillText(`Lap ${i + 1}`, x, y);
+        }
+
+        ctx.restore();
+    }
+};
+
+/* ===================== LAP HIGHLIGHT (NOWE) ===================== */
+const lapHighlightPlugin = {
+    id: 'lapHighlight',
+    beforeDraw(chart) {
+        if (!lapMarkers.length || !rawData.length || !selectedLaps?.length) return;
+
+        const { ctx, chartArea, scales } = chart;
+        const xScale = scales.x;
+        if (!xScale) return;
+
+        ctx.save();
+        ctx.fillStyle = 'rgba(120,120,120,0.20)'; // 👈 delikatnie ciemniejsze
+
+        const bounds = [...lapMarkers, rawData.at(-1).x];
+
+        for (const i of selectedLaps) {
+            const start = bounds[i];
+            const end = bounds[i + 1];
+
+            if (end < xScale.min || start > xScale.max) continue;
+
+            const x1 = xScale.getPixelForValue(Math.max(start, xScale.min));
+            const x2 = xScale.getPixelForValue(Math.min(end, xScale.max));
+
+            ctx.fillRect(
+                x1,
+                chartArea.top,
+                x2 - x1,
+                chartArea.bottom - chartArea.top
+            );
         }
 
         ctx.restore();
@@ -188,7 +224,7 @@ grid:{drawOnChartArea:false}
 }
 }
 },
-plugins:[lapLabelsPlugin]
+plugins:[lapHighlightPlugin, lapLabelsPlugin]
 });
 
 /* ===================== UI ===================== */
