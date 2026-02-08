@@ -136,53 +136,57 @@ function formatTime(sec){
         : `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
 }
 
+function getTimeStep(totalSec){
+    if (totalSec < 3600) return 300;   // 5 min
+    if (totalSec < 7200) return 600;   // 10 min
+    return 1800;                       // 30 min
+}
+
 /* ===================== STATE ===================== */
 let rawData = [];
 let lapMarkers = [];
 let lapSummaries = [];
 let selectedLaps = null;
 
-/* ===================== LAP LABELS ===================== */
+/* ===================== PLUGINS (BEZ ZMIAN) ===================== */
 const lapLabelsPlugin = {
-    id: 'lapLabels',
-    afterDraw(chart) {
-        if (!lapMarkers.length || !rawData.length) return;
-        const { ctx, chartArea, scales } = chart;
-        const xScale = scales.x;
+    id:'lapLabels',
+    afterDraw(chart){
+        if(!lapMarkers.length||!rawData.length) return;
+        const {ctx,chartArea,scales}=chart;
+        const x=scales.x;
         ctx.save();
-        ctx.fillStyle = 'rgba(120,120,120,0.35)';
-        ctx.font = 'bold 14px Arial';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'bottom';
-        const bounds = [...lapMarkers, rawData.at(-1).x];
-        for (let i = 0; i < lapMarkers.length; i++) {
-            const mid = (bounds[i] + bounds[i + 1]) / 2;
-            if (mid < xScale.min || mid > xScale.max) continue;
-            ctx.fillText(`Lap ${i + 1}`, xScale.getPixelForValue(mid), chartArea.bottom - 4);
+        ctx.fillStyle='rgba(120,120,120,0.35)';
+        ctx.font='bold 14px Arial';
+        ctx.textAlign='center';
+        ctx.textBaseline='bottom';
+        const b=[...lapMarkers,rawData.at(-1).x];
+        for(let i=0;i<lapMarkers.length;i++){
+            const mid=(b[i]+b[i+1])/2;
+            if(mid<x.min||mid>x.max) continue;
+            ctx.fillText(`Lap ${i+1}`,x.getPixelForValue(mid),chartArea.bottom-4);
         }
         ctx.restore();
     }
 };
 
-/* ===================== LAP HIGHLIGHT ===================== */
 const lapHighlightPlugin = {
-    id: 'lapHighlight',
-    beforeDraw(chart) {
-        if (!selectedLaps?.length) return;
-        const { ctx, chartArea, scales } = chart;
-        const xScale = scales.x;
+    id:'lapHighlight',
+    beforeDraw(chart){
+        if(!selectedLaps?.length) return;
+        const {ctx,chartArea,scales}=chart;
+        const x=scales.x;
         ctx.save();
-        ctx.fillStyle = 'rgba(120,120,120,0.20)';
-        const bounds = [...lapMarkers, rawData.at(-1).x];
-        for (const i of selectedLaps) {
-            const s = bounds[i], e = bounds[i + 1];
-            if (e < xScale.min || s > xScale.max) continue;
+        ctx.fillStyle='rgba(120,120,120,0.20)';
+        const b=[...lapMarkers,rawData.at(-1).x];
+        for(const i of selectedLaps){
+            const s=b[i],e=b[i+1];
+            if(e<x.min||s>x.max) continue;
             ctx.fillRect(
-                xScale.getPixelForValue(Math.max(s, xScale.min)),
+                x.getPixelForValue(Math.max(s,x.min)),
                 chartArea.top,
-                xScale.getPixelForValue(Math.min(e, xScale.max)) -
-                xScale.getPixelForValue(Math.max(s, xScale.min)),
-                chartArea.bottom - chartArea.top
+                x.getPixelForValue(Math.min(e,x.max))-x.getPixelForValue(Math.max(s,x.min)),
+                chartArea.bottom-chartArea.top
             );
         }
         ctx.restore();
@@ -190,42 +194,29 @@ const lapHighlightPlugin = {
 };
 
 /* ===================== CHART ===================== */
-const chart = new Chart(document.getElementById('chart'), {
+const chart=new Chart(document.getElementById('chart'),{
 type:'line',
 data:{datasets:[]},
 options:{
 maintainAspectRatio:false,
 interaction:{mode:'nearest',intersect:false},
-plugins:{
-legend:{display:false},
-zoom:{zoom:{drag:{enabled:true},mode:'x'}}
-},
+plugins:{legend:{display:false},zoom:{zoom:{drag:{enabled:true},mode:'x'}}},
 scales:{
-x:{
-    type:'linear',
-    title:{display:true,text:'Czas'},
-    ticks:{ callback:value => formatTime(value) }
-},
+x:{type:'linear',title:{display:true,text:'Czas'},ticks:{callback:v=>formatTime(v)}},
 yPower:{position:'left',title:{display:true,text:'Moc / inne'}},
-yHR:{
-position:'right',
-title:{display:true,text:'Tętno [bpm]'},
-grid:{drawOnChartArea:false}
-}
+yHR:{position:'right',title:{display:true,text:'Tętno [bpm]'},grid:{drawOnChartArea:false}}
 }
 },
-plugins:[lapHighlightPlugin, lapLabelsPlugin]
+plugins:[lapHighlightPlugin,lapLabelsPlugin]
 });
 
-
-
 /* ===================== UI ===================== */
-const show = id => document.getElementById(id).checked;
-document.getElementById('resetZoom').onclick = () => chart.resetZoom();
-document.querySelectorAll('input,select').forEach(e => e.onchange = redraw);
-document.getElementById('fileInput').onchange = loadTCX;
+const show=id=>document.getElementById(id).checked;
+document.getElementById('resetZoom').onclick=()=>chart.resetZoom();
+document.querySelectorAll('input,select').forEach(e=>e.onchange=redraw);
+document.getElementById('fileInput').onchange=loadTCX;
 
-/* ===================== LOAD TCX ===================== */
+/* ===================== LOAD TCX + RESZTA KODU ===================== */
 function loadTCX(e){
 const reader=new FileReader();
 reader.onload=ev=>{
@@ -302,61 +293,84 @@ redraw();
 }
 
 /* ===================== REDRAW ===================== */
-function redraw(){
-chart.data.datasets=[];
-if(!rawData.length) return;
+function redraw() {
+    chart.data.datasets = [];
+    if (!rawData.length) return;
 
-const tolerance = toleranceSelect.value === 'none'
-? Infinity
-: +toleranceSelect.value / 100;
+    // ===================== OŚ CZASU – OKRĄGŁE TICKI =====================
+    const totalTime = rawData.at(-1).x;   // sekundy od startu
+    chart.options.scales.x.ticks.stepSize = getTimeStep(totalTime);
 
-const filtered = filterZeroRuns([...rawData], +zeroSelect.value);
-const smoothedPower = smoothPowerPerLap(filtered, lapMarkers, +powerSmooth.value, tolerance);
+    // ===================== PARAMETRY =====================
+    const tolerance = toleranceSelect.value === 'none'
+        ? Infinity
+        : +toleranceSelect.value / 100;
 
-if(show('showPower')){
-chart.data.datasets.push({
-data:smoothedPower,
-borderColor:'#1f77b4',
-borderWidth:2,
-pointRadius:0,
-yAxisID:'yPower'
-});
-drawLapAverages(smoothedPower);
+    const filtered = filterZeroRuns([...rawData], +zeroSelect.value);
+    const smoothedPower = smoothPowerPerLap(
+        filtered,
+        lapMarkers,
+        +powerSmooth.value,
+        tolerance
+    );
+
+    // ===================== MOC =====================
+    if (show('showPower')) {
+        chart.data.datasets.push({
+            data: smoothedPower,
+            borderColor: '#1f77b4',
+            borderWidth: 2,
+            pointRadius: 0,
+            yAxisID: 'yPower'
+        });
+
+        drawLapAverages(smoothedPower);
+    }
+
+    // ===================== TĘTNO =====================
+    if (show('showHR')) {
+        chart.data.datasets.push({
+            data: smoothSimple(rawData, 'hr', +hrSmooth.value),
+            borderColor: '#d62728',
+            borderWidth: 1.5,
+            pointRadius: 0,
+            yAxisID: 'yHR'
+        });
+    }
+
+    // ===================== PRĘDKOŚĆ =====================
+    if (show('showSpeed')) {
+        chart.data.datasets.push({
+            data: rawData
+                .filter(p => p.speed != null)
+                .map(p => ({ x: p.x, y: p.speed })),
+            borderColor: '#2ca02c',
+            borderWidth: 1.2,
+            pointRadius: 0,
+            yAxisID: 'yPower'
+        });
+    }
+
+    // ===================== KADENCJA =====================
+    if (show('showCad')) {
+        chart.data.datasets.push({
+            data: rawData
+                .filter(p => p.cad != null)
+                .map(p => ({ x: p.x, y: p.cad })),
+            borderColor: '#ff7f0e',
+            borderWidth: 1.2,
+            pointRadius: 0,
+            yAxisID: 'yPower'
+        });
+    }
+
+    // ===================== TABELA =====================
+    buildLapTable();
+
+    // ===================== UPDATE =====================
+    chart.update();
 }
 
-if(show('showHR')){
-chart.data.datasets.push({
-data:smoothSimple(rawData,'hr',+hrSmooth.value),
-borderColor:'#d62728',
-borderWidth:1.5,
-pointRadius:0,
-yAxisID:'yHR'
-});
-}
-
-if(show('showSpeed')){
-chart.data.datasets.push({
-data:rawData.filter(p=>p.speed!=null).map(p=>({x:p.x,y:p.speed})),
-borderColor:'#2ca02c',
-borderWidth:1.2,
-pointRadius:0,
-yAxisID:'yPower'
-});
-}
-
-if(show('showCad')){
-chart.data.datasets.push({
-data:rawData.filter(p=>p.cad!=null).map(p=>({x:p.x,y:p.cad})),
-borderColor:'#ff7f0e',
-borderWidth:1.2,
-pointRadius:0,
-yAxisID:'yPower'
-});
-}
-
-buildLapTable();
-chart.update();
-}
 
 /* ===================== HELPERS ===================== */
 function smoothSimple(data,key,w){
