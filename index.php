@@ -585,7 +585,6 @@ function buildLapTable(){
             ? Math.round(avg(hrShifted))
             : '-';
 
-        const endHR = hrLap.length ? hrLap.at(-1) : '-';
         const s = lapSummaries[i];
 
         laps.push({
@@ -595,7 +594,6 @@ function buildLapTable(){
             avgHR,
             shiftedAvgHR,
             maxHR: s.maxHR ?? '-',
-            endHR,
             hrw:
                 s.avgPower && avgHR !== '-'
                     ? (avgHR / s.avgPower).toFixed(3)
@@ -612,13 +610,13 @@ function buildLapTable(){
     // ===== WIERSZE =====
     const rows = [
         { label: 'Śr. moc [W]', key: 'avgPower' },
-        { label: 'Max moc [W]', key: 'maxPower' },
         { label: 'Śr. HR [bpm]', key: 'avgHR' },
         { label: `Przesunięte Śr. HR (+${hrShift}s)`, key: 'shiftedAvgHR' },
+        { label: 'HR / W', key: 'hrw' },
         { label: 'Max HR [bpm]', key: 'maxHR' },
-        { label: 'HR koniec [bpm]', key: 'endHR' },
-        { label: 'HR / W', key: 'hrw' }
+        { label: 'Max moc [W]', key: 'maxPower' }
     ];
+
 
     for (const row of rows) {
         let html = `<tr><th>${row.label}</th>`;
