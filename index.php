@@ -418,11 +418,18 @@ function buildLapBar() {
     const xScale = chart.scales.x;
     const bounds = [...lapMarkers, rawData.at(-1).x];
 
-    const leftPx  = xScale.left;
-    const rightPx = xScale.right;
+    const leftPx = xScale.left;
+
+    // piksel, gdzie faktycznie kończą się dane
+    const dataEndX = rawData.at(-1).x;
+    const rightPx = Math.min(
+        xScale.getPixelForValue(dataEndX),
+        xScale.right
+    );
 
     bar.style.left  = `${leftPx}px`;
-    bar.style.width = `${rightPx - leftPx}px`;
+    bar.style.width = `${Math.max(0, rightPx - leftPx)}px`;
+
 
     bounds.slice(0, -1).forEach((start, i) => {
         const end = bounds[i + 1];
