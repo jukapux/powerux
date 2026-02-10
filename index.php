@@ -47,15 +47,6 @@ td:first-child, th:first-child { text-align: center; }
     text-align: center;
 }
 
-#lapBar {
-    position: relative;
-    height: 8px;
-    background: transparent;
-    overflow: hidden;
-    user-select: none;
-    flex: none;
-}
-
 
 .lap-segment {
     position: absolute;
@@ -96,12 +87,19 @@ td:first-child, th:first-child { text-align: center; }
 }
 
 #lapRow {
-    position: relative;
+    position: absolute;
+    top: 0;
+    left: 0;
     display: flex;
     align-items: center;
-    gap: 6px;
-    margin-bottom: 6px;   /* ← odstęp od wykresu */
 }
+
+
+#lapBar {
+    position: absolute;
+    height: 8px;
+}
+
 
 
 #lapLabel {
@@ -109,6 +107,7 @@ td:first-child, th:first-child { text-align: center; }
     color: #555;
     white-space: nowrap;
     user-select: none;
+    margin-right: 6px;
 }
 
 
@@ -188,12 +187,13 @@ td:first-child, th:first-child { text-align: center; }
 </table>
 
 <div class="chart-wrap">
+    <canvas id="chart"></canvas>
     <div id="lapRow">
         <div id="lapLabel">Laps</div>
         <div id="lapBar"></div>
     </div>
-    <canvas id="chart"></canvas>
 </div>
+
 
 
 
@@ -432,19 +432,25 @@ function buildLapBar() {
     bar.innerHTML = '';
 
     if (!lapMarkers.length || !rawData.length) return;
-    if (!chart?.scales?.x) return;
+    if (!chart?.scales?.x || !chart.chartArea) return;
 
     const xScale = chart.scales.x;
-    const leftPx = xScale.left;
+    const chartArea = chart.chartArea;
 
+    const leftPx = chartArea.left;
     const dataEndX = rawData.at(-1).x;
     const rightPx = Math.min(
         xScale.getPixelForValue(dataEndX),
-        xScale.right
+        chartArea.right
     );
 
+    // === pozycja i szerokość paska dokładnie pod osią X ===
+    bar.style.position = 'absolute';
+    bar.style.left = `${leftPx}px`;
     bar.style.width = `${Math.max(0, rightPx - leftPx)}px`;
+    bar.style.height = '8px';
 
+    // === tło paska ===
     const bg = document.createElement('div');
     bg.style.position = 'absolute';
     bg.style.inset = '0';
@@ -453,6 +459,7 @@ function buildLapBar() {
     bg.style.pointerEvents = 'none';
     bar.appendChild(bg);
 
+    // === segmenty lapów ===
     const bounds = [...lapMarkers, dataEndX];
 
     bounds.slice(0, -1).forEach((start, i) => {
@@ -468,7 +475,7 @@ function buildLapBar() {
         const seg = document.createElement('div');
         seg.className = 'lap-segment';
         seg.style.left = `${x1}px`;
-        seg.style.width = `${Math.max(1, x2 - x1 - 2)}px`;
+        seg.style.width = `${Math.max(1, x2 - x1 - 2)}px`; // -2px na separator
         seg.onclick = evt => handleLapClick(evt, i);
 
         if (selectedLaps?.includes(i)) {
@@ -478,6 +485,8 @@ function buildLapBar() {
         bar.appendChild(seg);
     });
 }
+
+
 
 
 
