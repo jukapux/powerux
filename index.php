@@ -47,6 +47,32 @@ td:first-child, th:first-child { text-align: center; }
 #lapTable thead th {
     text-align: center;
 }
+
+#lapBar {
+    display: flex;
+    height: 24px;
+    margin-bottom: 6px;
+    background: #e0e0e0;
+    border-radius: 4px;
+    overflow: hidden;
+    user-select: none;
+    cursor: pointer;
+}
+
+.lap-segment {
+    flex: 1;
+    border-right: 1px solid #c0c0c0;
+    background: #d6d6d6;
+}
+
+.lap-segment:last-child {
+    border-right: none;
+}
+
+.lap-segment.selected {
+    background: #9e9e9e;
+}
+
 </style>
 </head>
 <body>
@@ -122,6 +148,7 @@ td:first-child, th:first-child { text-align: center; }
 <tbody></tbody>
 </table>
 
+<div id="lapBar"></div>
 <div class="chart-wrap">
 <canvas id="chart"></canvas>
 </div>
@@ -260,12 +287,7 @@ yHR:{position:'right',title:{display:true,text:'Tętno [bpm]'},grid:{drawOnChart
 plugins:[lapHighlightPlugin,lapLabelsPlugin]
 });
 
-// ===== ODRÓŻNIANIE ZOOM DRAG vs KLIK =====
-let wasDragging = false;
 
-chart.options.plugins.zoom.zoom.onZoomComplete = () => {
-    wasDragging = true;
-};
 
 
 /* ===================== UI ===================== */
@@ -277,38 +299,11 @@ document.getElementById('fileInput').onchange=loadTCX;
 
 let lastClickedLap = null;
 
-
-document.getElementById('chart').onclick = function (evt) {
-    if (wasDragging) {
-        wasDragging = false;
-        return;
-    }
-
-    const rect = evt.target.getBoundingClientRect();
-    const xPixel = evt.clientX - rect.left;
-
-    const xValue = chart.scales.x.getValueForPixel(xPixel);
-    if (xValue == null) return;
-
-    // znajdź numer okrążenia
-    const bounds = [...lapMarkers, Infinity];
-    let lapIndex = null;
-
-    for (let i = 0; i < lapMarkers.length; i++) {
-        if (xValue >= bounds[i] && xValue < bounds[i + 1]) {
-            lapIndex = i;
-            break;
-        }
-    }
-    if (lapIndex === null) return;
-
-    // ===== LOGIKA WYBORU =====
+function handleLapClick(evt, lapIndex) {
     if (!evt.ctrlKey && !evt.shiftKey) {
-        // zwykły klik → tylko to okrążenie
         selectedLaps = [lapIndex];
     }
     else if (evt.ctrlKey) {
-        // CTRL + klik → toggle
         selectedLaps ??= [];
         if (selectedLaps.includes(lapIndex))
             selectedLaps = selectedLaps.filter(i => i !== lapIndex);
@@ -316,7 +311,6 @@ document.getElementById('chart').onclick = function (evt) {
             selectedLaps.push(lapIndex);
     }
     else if (evt.shiftKey && lastClickedLap !== null) {
-        // SHIFT + klik → zakres
         const from = Math.min(lastClickedLap, lapIndex);
         const to   = Math.max(lastClickedLap, lapIndex);
         selectedLaps = [];
@@ -325,7 +319,8 @@ document.getElementById('chart').onclick = function (evt) {
 
     lastClickedLap = lapIndex;
     redraw();
-};
+}
+
 
 
 /* ===================== LOAD TCX + RESZTA KODU ===================== */
@@ -334,7 +329,11 @@ const reader=new FileReader();
 reader.onload=ev=>{
 const xml=new DOMParser().parseFromString(ev.target.result,'text/xml');
 
-rawData=[]; lapMarkers=[]; lapSummaries=[];
+rawData = [];
+lapMarkers = [];
+lapSummaries = [];
+selectedLaps = null;
+lastClickedLap = null;
 const tps=xml.getElementsByTagName('Trackpoint');
 let start=null;
 
@@ -370,6 +369,37 @@ maxHR: +lap.getElementsByTagName('MaximumHeartRateBpm')[0]?.getElementsByTagName
 redraw();
 };
 reader.readAsText(e.target.files[0]);
+}
+
+
+function buildLapBar() {
+    const bar = document.getElementById('lapBar');
+    bar.innerHTML = '';
+
+    if (!lapMarkers.length || !rawData.length) return;
+
+    const bounds = [...lapMarkers, rawData.at(-1).x];
+    const totalTime = bounds.at(-1);
+
+    lapMarkers.forEach((_, i) => {
+        const start = bounds[i];
+        const end   = bounds[i + 1];
+        const duration = Math.max(0.1, end - start); // zabezpieczenie
+
+        const seg = document.createElement('div');
+        seg.className = 'lap-segment';
+        seg.style.flex = duration / totalTime;
+        seg.dataset.index = i;
+        seg.title = `Lap ${i + 1}`;
+
+        if (selectedLaps?.includes(i)) {
+            seg.classList.add('selected');
+        }
+
+        seg.onclick = (evt) => handleLapClick(evt, i);
+
+        bar.appendChild(seg);
+    });
 }
 
 
@@ -450,6 +480,7 @@ function redraw() {
 
     // ===================== UPDATE =====================
     chart.update();
+    buildLapBar();
 }
 
 
