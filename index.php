@@ -63,22 +63,38 @@ td:first-child, th:first-child { text-align: center; }
     top: 0;
     bottom: 0;
     background: #d6d6d6;
-    border-right: 1px solid #c0c0c0;
     cursor: pointer;
 }
+
 
 .lap-segment.selected {
     background: #9e9e9e;
 }
 
-.lap-segment:last-child {
-    border-right: none;
-}
 
 .chart-wrap {
     position: relative;
     height: 300px;
 }
+
+.lap-segment::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 1px;
+    height: 100%;
+    background: rgba(0,0,0,0.35);
+}
+
+.lap-segment:last-child::after {
+    display: none;
+}
+
+.lap-segment:hover {
+    background: #c9c9c9;
+}
+
 
 
 </style>
