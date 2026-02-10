@@ -97,14 +97,12 @@ td:first-child, th:first-child { text-align: center; }
 }
 
 #lapRow {
-    position: absolute;
-    top: -20px;
-    left: 0;
-    right: 0;
     display: flex;
     align-items: center;
     gap: 6px;
+    margin-bottom: 6px;   /* ← odstęp od wykresu */
 }
+
 
 #lapLabel {
     font-size: 11px;
@@ -448,8 +446,12 @@ function buildLapBar() {
         xScale.right
     );
 
-    bar.style.left = `0px`; // flex robi resztę
+    const labelWidth =
+        document.getElementById('lapLabel').offsetWidth + 6; // gap
+
+    bar.style.marginLeft = `${leftPx - labelWidth}px`;
     bar.style.width = `${Math.max(0, rightPx - leftPx)}px`;
+
 
 
     bounds.slice(0, -1).forEach((start, i) => {
