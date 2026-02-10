@@ -49,12 +49,12 @@ td:first-child, th:first-child { text-align: center; }
 
 #lapBar {
     position: relative;
-    height: 24px;
-    margin-bottom: 6px;
+    height: 8px;
     background: #e0e0e0;
-    border-radius: 4px;
+    border-radius: 3px;
     overflow: hidden;
     user-select: none;
+    flex: 1;
 }
 
 
@@ -82,10 +82,11 @@ td:first-child, th:first-child { text-align: center; }
     position: absolute;
     top: 0;
     right: 0;
-    width: 1px;
+    width: 2px;          /* ← 2 px */
     height: 100%;
-    background: rgba(0,0,0,0.35);
+    background: #fff;   /* ← białe */
 }
+
 
 .lap-segment:last-child::after {
     display: none;
@@ -95,6 +96,22 @@ td:first-child, th:first-child { text-align: center; }
     background: #c9c9c9;
 }
 
+#lapRow {
+    position: absolute;
+    top: -20px;
+    left: 0;
+    right: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+#lapLabel {
+    font-size: 11px;
+    color: #555;
+    white-space: nowrap;
+    user-select: none;
+}
 
 
 </style>
@@ -173,9 +190,13 @@ td:first-child, th:first-child { text-align: center; }
 </table>
 
 <div class="chart-wrap">
-    <div id="lapBar"></div>
+    <div id="lapRow">
+        <div id="lapLabel">Laps</div>
+        <div id="lapBar"></div>
+    </div>
     <canvas id="chart"></canvas>
 </div>
+
 
 
 <script>
@@ -427,7 +448,7 @@ function buildLapBar() {
         xScale.right
     );
 
-    bar.style.left  = `${leftPx}px`;
+    bar.style.left = `0px`; // flex robi resztę
     bar.style.width = `${Math.max(0, rightPx - leftPx)}px`;
 
 
