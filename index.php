@@ -453,11 +453,12 @@ function buildLapBar() {
     bg.style.left = '0';
     bg.style.top = '0';
     bg.style.height = '100%';
-    bg.style.width = '100%';
+    bg.style.width = `${Math.max(0, rightPx - leftPx)}px`; // ✅ KLUCZ
     bg.style.background = '#e0e0e0';
     bg.style.borderRadius = '3px';
-    bg.style.pointerEvents = 'none'; // ← WAŻNE
+    bg.style.pointerEvents = 'none';
     bar.appendChild(bg);
+
 
     const bounds = [...lapMarkers, dataEndX];
 
