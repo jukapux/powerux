@@ -50,8 +50,7 @@ td:first-child, th:first-child { text-align: center; }
 #lapBar {
     position: relative;
     height: 8px;
-    background: #e0e0e0;
-    border-radius: 3px;
+    background: transparent;
     overflow: hidden;
     user-select: none;
     flex: 1;
@@ -435,11 +434,8 @@ function buildLapBar() {
     if (!chart?.scales?.x) return;
 
     const xScale = chart.scales.x;
-    const bounds = [...lapMarkers, rawData.at(-1).x];
-
     const leftPx = xScale.left;
 
-    // piksel, gdzie faktycznie kończą się dane
     const dataEndX = rawData.at(-1).x;
     const rightPx = Math.min(
         xScale.getPixelForValue(dataEndX),
@@ -447,23 +443,37 @@ function buildLapBar() {
     );
 
     const labelWidth =
-        document.getElementById('lapLabel').offsetWidth + 6; // gap
+        document.getElementById('lapLabel').offsetWidth + 6;
 
     bar.style.marginLeft = `${leftPx - labelWidth}px`;
     bar.style.width = `${Math.max(0, rightPx - leftPx)}px`;
 
+    const bg = document.createElement('div');
+    bg.style.position = 'absolute';
+    bg.style.left = '0';
+    bg.style.top = '0';
+    bg.style.height = '100%';
+    bg.style.width = '100%';
+    bg.style.background = '#e0e0e0';
+    bg.style.borderRadius = '3px';
+    bg.style.pointerEvents = 'none'; // ← WAŻNE
+    bar.appendChild(bg);
 
+    const bounds = [...lapMarkers, dataEndX];
 
     bounds.slice(0, -1).forEach((start, i) => {
         const end = bounds[i + 1];
 
         const x1 = xScale.getPixelForValue(start) - leftPx;
-        const x2 = xScale.getPixelForValue(end)   - leftPx;
+        const x2 = xScale.getPixelForValue(end) - leftPx;
+
+        const w = Math.max(1, x2 - x1);
+        const isLast = i === bounds.length - 2;
 
         const seg = document.createElement('div');
         seg.className = 'lap-segment';
-        seg.style.left  = `${x1}px`;
-        seg.style.width = `${Math.max(1, x2 - x1)}px`;
+        seg.style.left = `${x1}px`;
+        seg.style.width = `${isLast ? w : w - 2}px`;
         seg.title = `Lap ${i + 1}`;
 
         if (selectedLaps?.includes(i)) {
@@ -471,10 +481,12 @@ function buildLapBar() {
         }
 
         seg.onclick = evt => handleLapClick(evt, i);
-
         bar.appendChild(seg);
     });
 }
+
+
+
 
 
 
