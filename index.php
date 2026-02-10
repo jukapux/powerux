@@ -434,7 +434,7 @@ function buildLapBar() {
     if (!chart?.scales?.x) return;
 
     const xScale = chart.scales.x;
-    const leftPx = xScale.left;
+    const leftPx = xScale.getPixelForValue(xScale.min);
 
     const dataEndX = rawData.at(-1).x;
     const rightPx = Math.min(
