@@ -469,8 +469,8 @@ function buildLapBar() {
         const e = Math.min(end,   xScale.max);
         if (e <= s) return;
 
-        const x1 = xScale.getPixelForValue(s) - leftPx;
-        const x2 = xScale.getPixelForValue(e) - leftPx;
+const x1 = Math.round(xScale.getPixelForValue(s) - leftPx);
+const x2 = Math.round(xScale.getPixelForValue(e) - leftPx);
 
         const seg = document.createElement('div');
         seg.className = 'lap-segment';
