@@ -53,7 +53,7 @@ td:first-child, th:first-child { text-align: center; }
     background: transparent;
     overflow: hidden;
     user-select: none;
-    flex: 1;
+    flex: none;
 }
 
 
@@ -96,6 +96,7 @@ td:first-child, th:first-child { text-align: center; }
 }
 
 #lapRow {
+    position: relative;
     display: flex;
     align-items: center;
     gap: 6px;
@@ -434,7 +435,7 @@ function buildLapBar() {
     if (!chart?.scales?.x) return;
 
     const xScale = chart.scales.x;
-    const leftPx = xScale.getPixelForValue(xScale.min);
+    const leftPx = xScale.left;
 
     const dataEndX = rawData.at(-1).x;
     const rightPx = Math.min(
@@ -442,49 +443,42 @@ function buildLapBar() {
         xScale.right
     );
 
-    const labelWidth =
-        document.getElementById('lapLabel').offsetWidth + 6;
-
-    bar.style.marginLeft = `${leftPx - labelWidth}px`;
     bar.style.width = `${Math.max(0, rightPx - leftPx)}px`;
 
     const bg = document.createElement('div');
     bg.style.position = 'absolute';
-    bg.style.left = '0';
-    bg.style.top = '0';
-    bg.style.height = '100%';
-    bg.style.width = `${Math.max(0, rightPx - leftPx)}px`; // ✅ KLUCZ
+    bg.style.inset = '0';
     bg.style.background = '#e0e0e0';
     bg.style.borderRadius = '3px';
     bg.style.pointerEvents = 'none';
     bar.appendChild(bg);
-
 
     const bounds = [...lapMarkers, dataEndX];
 
     bounds.slice(0, -1).forEach((start, i) => {
         const end = bounds[i + 1];
 
-        const x1 = xScale.getPixelForValue(start) - leftPx;
-        const x2 = xScale.getPixelForValue(end) - leftPx;
+        const s = Math.max(start, xScale.min);
+        const e = Math.min(end,   xScale.max);
+        if (e <= s) return;
 
-        const w = Math.max(1, x2 - x1);
-        const isLast = i === bounds.length - 2;
+        const x1 = xScale.getPixelForValue(s) - leftPx;
+        const x2 = xScale.getPixelForValue(e) - leftPx;
 
         const seg = document.createElement('div');
         seg.className = 'lap-segment';
         seg.style.left = `${x1}px`;
-        seg.style.width = `${isLast ? w : w - 2}px`;
-        seg.title = `Lap ${i + 1}`;
+        seg.style.width = `${Math.max(1, x2 - x1 - 2)}px`;
+        seg.onclick = evt => handleLapClick(evt, i);
 
         if (selectedLaps?.includes(i)) {
             seg.classList.add('selected');
         }
 
-        seg.onclick = evt => handleLapClick(evt, i);
         bar.appendChild(seg);
     });
 }
+
 
 
 
