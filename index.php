@@ -13,7 +13,6 @@ body { font-family: Arial, sans-serif; margin: 30px; }
 label { margin-right: 15px; }
 button { margin-left: 15px; padding: 4px 10px; }
 
-.chart-wrap { height: 300px; }
 canvas { max-width: 100%; }
 
 select[multiple] { padding: 4px; }
@@ -49,29 +48,38 @@ td:first-child, th:first-child { text-align: center; }
 }
 
 #lapBar {
-    display: flex;
+    position: relative;
     height: 24px;
     margin-bottom: 6px;
     background: #e0e0e0;
     border-radius: 4px;
     overflow: hidden;
     user-select: none;
+}
+
+
+.lap-segment {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    background: #d6d6d6;
+    border-right: 1px solid #c0c0c0;
     cursor: pointer;
 }
 
-.lap-segment {
-    flex: 1;
-    border-right: 1px solid #c0c0c0;
-    background: #d6d6d6;
+.lap-segment.selected {
+    background: #9e9e9e;
 }
 
 .lap-segment:last-child {
     border-right: none;
 }
 
-.lap-segment.selected {
-    background: #9e9e9e;
+.chart-wrap {
+    position: relative;
+    height: 300px;
 }
+
 
 </style>
 </head>
@@ -148,10 +156,11 @@ td:first-child, th:first-child { text-align: center; }
 <tbody></tbody>
 </table>
 
-<div id="lapBar"></div>
 <div class="chart-wrap">
-<canvas id="chart"></canvas>
+    <div id="lapBar"></div>
+    <canvas id="chart"></canvas>
 </div>
+
 
 <script>
 /* ===================== UTIL ===================== */
@@ -234,7 +243,18 @@ interaction:{mode:'nearest',intersect:false},
 
 plugins:{
     legend:{display:false},
-    zoom:{zoom:{drag:{enabled:true},mode:'x'}},
+    zoom: {
+    zoom: {
+        drag: { enabled: true },
+        mode: 'x',
+        onZoomComplete: () => buildLapBar()
+    },
+    pan: {
+        enabled: true,
+        mode: 'x',
+        onPanComplete: () => buildLapBar()
+    }
+},
     tooltip:{
         enabled:true,
         mode:'nearest',
@@ -377,30 +397,40 @@ function buildLapBar() {
     bar.innerHTML = '';
 
     if (!lapMarkers.length || !rawData.length) return;
+    if (!chart?.scales?.x) return;
 
+    const xScale = chart.scales.x;
     const bounds = [...lapMarkers, rawData.at(-1).x];
-    const totalTime = bounds.at(-1);
 
-    lapMarkers.forEach((_, i) => {
-        const start = bounds[i];
-        const end   = bounds[i + 1];
-        const duration = Math.max(0.1, end - start); // zabezpieczenie
+    const leftPx  = xScale.left;
+    const rightPx = xScale.right;
+
+    bar.style.left  = `${leftPx}px`;
+    bar.style.width = `${rightPx - leftPx}px`;
+
+    bounds.slice(0, -1).forEach((start, i) => {
+        const end = bounds[i + 1];
+
+        const x1 = xScale.getPixelForValue(start) - leftPx;
+        const x2 = xScale.getPixelForValue(end)   - leftPx;
 
         const seg = document.createElement('div');
         seg.className = 'lap-segment';
-        seg.style.flex = duration / totalTime;
-        seg.dataset.index = i;
+        seg.style.left  = `${x1}px`;
+        seg.style.width = `${Math.max(1, x2 - x1)}px`;
         seg.title = `Lap ${i + 1}`;
 
         if (selectedLaps?.includes(i)) {
             seg.classList.add('selected');
         }
 
-        seg.onclick = (evt) => handleLapClick(evt, i);
+        seg.onclick = evt => handleLapClick(evt, i);
 
         bar.appendChild(seg);
     });
 }
+
+
 
 
 /* ===================== REDRAW ===================== */
@@ -659,6 +689,10 @@ function buildLapTable(){
     }
 }
 
+window.addEventListener('resize', () => {
+    chart.resize();
+    buildLapBar();
+});
 
 </script>
 
