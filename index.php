@@ -47,6 +47,52 @@ td:first-child, th:first-child { text-align: center; }
     text-align: center;
 }
 
+.chart-layout {
+    display: flex;
+    align-items: stretch;
+    gap: 12px;
+}
+
+#statsPanel {
+    min-width: 170px;
+    border: 1px solid #d9d9d9;
+    background: #fafafa;
+    padding: 10px 12px;
+    font-size: 13px;
+}
+
+.stats-title {
+    font-size: 12px;
+    color: #777;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.stats-group {
+    margin-bottom: 10px;
+}
+
+.stats-group:last-child {
+    margin-bottom: 0;
+}
+
+.stats-name {
+    font-weight: bold;
+    margin-bottom: 2px;
+}
+
+.stats-line {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    color: #444;
+}
+
+.stats-line span:first-child {
+    color: #777;
+}
+
 
 .lap-segment {
     position: absolute;
@@ -172,11 +218,18 @@ td:first-child, th:first-child { text-align: center; }
 <tbody></tbody>
 </table>
 
-<div class="chart-wrap">
-    <canvas id="chart"></canvas>
-    <div id="lapRow">
-        <div id="lapLabel">Laps</div>
-        <div id="lapBar"></div>
+<div class="chart-layout">
+    <aside id="statsPanel">
+        <div class="stats-title">Statystyki</div>
+        <div id="statsContent"></div>
+    </aside>
+
+    <div class="chart-wrap">
+        <canvas id="chart"></canvas>
+        <div id="lapRow">
+            <div id="lapLabel">Laps</div>
+            <div id="lapBar"></div>
+        </div>
     </div>
 </div>
 
@@ -201,6 +254,93 @@ function getTimeStep(totalSec){
     if (totalSec < 3600) return 300;   // 5 min
     if (totalSec < 7200) return 600;   // 10 min
     return 1800;                       // 30 min
+}
+
+function formatMetricValue(value, unit, digits = 0){
+    if (value == null || Number.isNaN(value)) return '-';
+    return `${value.toFixed(digits)} ${unit}`;
+}
+
+function getStatsRange(){
+    if (!rawData.length) return null;
+
+    if (selectedLaps?.length === 1) {
+        const lapIndex = selectedLaps[0];
+        const bounds = [...lapMarkers, rawData.at(-1).x];
+        return {
+            start: bounds[lapIndex],
+            end: bounds[lapIndex + 1],
+            label: `Okrążenie ${lapIndex + 1}`
+        };
+    }
+
+    const fullStart = rawData[0].x;
+    const fullEnd = rawData.at(-1).x;
+    if (!chart?.scales?.x) {
+        return { start: fullStart, end: fullEnd, label: 'Cała aktywność' };
+    }
+
+    const xScale = chart.scales.x;
+    const start = Math.max(fullStart, xScale.min);
+    const end = Math.min(fullEnd, xScale.max);
+    const isZoomed = Math.abs(start - fullStart) > 0.001 || Math.abs(end - fullEnd) > 0.001;
+
+    return {
+        start,
+        end,
+        label: isZoomed ? 'Zaznaczony obszar' : 'Cała aktywność'
+    };
+}
+
+function calcMetricStats(data, key){
+    const values = data.map(p => p[key]).filter(v => v != null);
+    if (!values.length) return { avg: null, max: null };
+
+    return {
+        avg: avg(values),
+        max: Math.max(...values)
+    };
+}
+
+function updateStatsPanel(){
+    const statsContent = document.getElementById('statsContent');
+    if (!statsContent) return;
+
+    if (!rawData.length) {
+        statsContent.innerHTML = '<div class="stats-line"><span>Dane:</span><span>brak</span></div>';
+        return;
+    }
+
+    const range = getStatsRange();
+    if (!range || range.end <= range.start) {
+        statsContent.innerHTML = '<div class="stats-line"><span>Dane:</span><span>brak</span></div>';
+        return;
+    }
+
+    const scopedData = rawData.filter(p => p.x >= range.start && p.x <= range.end);
+    const power = calcMetricStats(scopedData, 'power');
+    const hr = calcMetricStats(scopedData, 'hr');
+    const speed = calcMetricStats(scopedData, 'speed');
+    const cad = calcMetricStats(scopedData, 'cad');
+
+    const renderGroup = (name, stats, unit, digits = 0) => `
+        <div class="stats-group">
+            <div class="stats-name">${name}</div>
+            <div class="stats-line"><span>Średnia</span><span>${formatMetricValue(stats.avg, unit, digits)}</span></div>
+            <div class="stats-line"><span>Maksymalna</span><span>${formatMetricValue(stats.max, unit, digits)}</span></div>
+        </div>
+    `;
+
+    statsContent.innerHTML = `
+        <div class="stats-group">
+            <div class="stats-name">Zakres</div>
+            <div class="stats-line"><span>${range.label}</span><span>${formatTime(range.start)}–${formatTime(range.end)}</span></div>
+        </div>
+        ${renderGroup('Moc', power, 'W')}
+        ${renderGroup('Tętno', hr, 'bpm')}
+        ${renderGroup('Prędkość', speed, 'km/h', 1)}
+        ${renderGroup('Kadencja', cad, 'rpm')}
+    `;
 }
 
 /* ===================== STATE ===================== */
@@ -268,12 +408,18 @@ plugins:{
     zoom: {
         drag: { enabled: true },
         mode: 'x',
-        onZoomComplete: () => buildLapBar()
+        onZoomComplete: () => {
+            buildLapBar();
+            updateStatsPanel();
+        }
     },
     pan: {
         enabled: true,
         mode: 'x',
-        onPanComplete: () => buildLapBar()
+        onPanComplete: () => {
+            buildLapBar();
+            updateStatsPanel();
+        }
     }
 },
     tooltip:{
@@ -333,7 +479,11 @@ plugins:[lapHighlightPlugin,lapLabelsPlugin]
 
 /* ===================== UI ===================== */
 const show=id=>document.getElementById(id).checked;
-document.getElementById('resetZoom').onclick=()=>chart.resetZoom();
+document.getElementById('resetZoom').onclick=() => {
+    chart.resetZoom();
+    buildLapBar();
+    updateStatsPanel();
+};
 document.querySelectorAll('input,select').forEach(e=>e.onchange=redraw);
 document.getElementById('fileInput').onchange=loadTCX;
 
@@ -487,7 +637,10 @@ function buildLapBar() {
 /* ===================== REDRAW ===================== */
 function redraw() {
     chart.data.datasets = [];
-    if (!rawData.length) return;
+    if (!rawData.length) {
+        updateStatsPanel();
+        return;
+    }
 
     // ===================== OŚ CZASU – OKRĄGŁE TICKI =====================
     const totalTime = rawData.at(-1).x;   // sekundy od startu
@@ -562,6 +715,7 @@ function redraw() {
     // ===================== UPDATE =====================
     chart.update();
     buildLapBar();
+    updateStatsPanel();
 }
 
 
@@ -743,7 +897,10 @@ function buildLapTable(){
 window.addEventListener('resize', () => {
     chart.resize();
     buildLapBar();
+    updateStatsPanel();
 });
+
+updateStatsPanel();
 
 </script>
 
