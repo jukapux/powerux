@@ -247,6 +247,7 @@ td:first-child, th:first-child { text-align: center; }
 <label><input type="checkbox" id="showHR" checked> Tętno</label>
 <label><input type="checkbox" id="showSpeed"> Prędkość</label>
 <label><input type="checkbox" id="showCad" checked> Kadencja</label>
+<label><input type="checkbox" id="showWHR"> W / HR</label>
 <button id="resetZoom">Zeruj przybliżenie</button>
 </div>
 
@@ -302,6 +303,11 @@ function formatMetricValue(value, unit, digits = 0){
     return `${value.toFixed(digits)} ${unit}`;
 }
 
+function getPowerHrRatio(point){
+    if (!point || point.power == null || point.hr == null || point.hr <= 0) return null;
+    return point.power / point.hr;
+}
+
 function findNearestPointByTime(t){
     if (!rawData.length) return null;
     return rawData.reduce((a, b) =>
@@ -343,6 +349,7 @@ function updateCursorPanel(point){
     if (show('showPower')) parts.push(renderCursorValue(point.power, 'W'));
     if (show('showHR')) parts.push(renderCursorValue(point.hr, 'bpm'));
     if (show('showCad')) parts.push(renderCursorValue(point.cad, 'rpm'));
+    if (show('showWHR')) parts.push(renderCursorValue(getPowerHrRatio(point), 'W/HR', 3));
 
     if (!parts.length) {
         container.className = 'cursor-empty';
@@ -580,6 +587,11 @@ plugins:{
                 if (show('showCad') && p.cad != null)
                     lines.push(`Kadencja: ${Math.round(p.cad)} rpm`);
 
+                if (show('showWHR')) {
+                    const whr = getPowerHrRatio(p);
+                    if (whr != null) lines.push(`W / HR: ${whr.toFixed(3)}`);
+                }
+
                 return lines;
             }
         }
@@ -590,7 +602,8 @@ plugins:{
 scales:{
 x:{type:'linear',title:{display:true,text:'Czas'},ticks:{callback:v=>formatTime(v)}},
 yPower:{position:'left',title:{display:true,text:'Moc / inne'}},
-yHR:{position:'right',title:{display:true,text:'Tętno [bpm]'},grid:{drawOnChartArea:false}}
+yHR:{position:'right',title:{display:true,text:'Tętno [bpm]'},grid:{drawOnChartArea:false}},
+yWHR:{position:'right',display:false,grid:{drawOnChartArea:false}}
 }
 },
 plugins:[lapHighlightPlugin,lapLabelsPlugin,cursorGuidePlugin]
@@ -836,6 +849,19 @@ function redraw() {
         });
     }
 
+    // ===================== W / HR =====================
+    if (show('showWHR')) {
+        chart.data.datasets.push({
+            data: rawData
+                .map(p => ({ x: p.x, y: getPowerHrRatio(p) }))
+                .filter(p => p.y != null),
+            borderColor: '#7e57c2',
+            borderWidth: 1.6,
+            pointRadius: 0,
+            yAxisID: 'yWHR'
+        });
+    }
+
     // ===================== TABELA =====================
     buildLapTable();
 
@@ -987,9 +1013,9 @@ function buildLapTable(){
             avgHR,
             shiftedAvgHR,
             maxHR: s.maxHR ?? '-',
-            hrw:
-                s.avgPower && avgHR !== '-'
-                    ? (avgHR / s.avgPower).toFixed(3)
+            whr:
+                s.avgPower && avgHR !== '-' && avgHR > 0
+                    ? (s.avgPower / avgHR).toFixed(3)
                     : '-'
         });
     }
@@ -1005,7 +1031,7 @@ function buildLapTable(){
         { label: 'Śr. moc [W]', key: 'avgPower' },
         { label: 'Śr. HR [bpm]', key: 'avgHR' },
         { label: `Przesunięte Śr. HR (+${hrShift}s)`, key: 'shiftedAvgHR' },
-        { label: 'HR / W', key: 'hrw' },
+        { label: 'W / HR', key: 'whr' },
         { label: 'Max HR [bpm]', key: 'maxHR' },
         { label: 'Max moc [W]', key: 'maxPower' }
     ];
