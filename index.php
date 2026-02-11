@@ -273,23 +273,26 @@ function getStatsRange(){
         const bounds = [...lapMarkers, rawData.at(-1).x];
         return {
             start: bounds[lapIndex],
-            end: bounds[lapIndex + 1]
+            end: bounds[lapIndex + 1],
+            label: `Okrążenie ${lapIndex + 1}`
         };
     }
 
     const fullStart = rawData[0].x;
     const fullEnd = rawData.at(-1).x;
     if (!chart?.scales?.x) {
-        return { start: fullStart, end: fullEnd };
+        return { start: fullStart, end: fullEnd, label: 'Cała aktywność' };
     }
 
     const xScale = chart.scales.x;
     const start = Math.max(fullStart, xScale.min);
     const end = Math.min(fullEnd, xScale.max);
+    const isZoomed = Math.abs(start - fullStart) > 0.001 || Math.abs(end - fullEnd) > 0.001;
 
     return {
         start,
-        end
+        end,
+        label: isZoomed ? 'Zaznaczony obszar' : 'Cała aktywność'
     };
 }
 
@@ -333,6 +336,10 @@ function updateStatsPanel(){
     `;
 
     statsContent.innerHTML = `
+        <div class="stats-group">
+            <div class="stats-name">Zakres</div>
+            <div class="stats-line"><span>${range.label}</span><span>${formatTime(range.start)}–${formatTime(range.end)}</span></div>
+        </div>
         ${renderGroup('Moc', power, 'W')}
         ${renderGroup('Tętno', hr, 'bpm')}
         ${renderGroup('Prędkość', speed, 'km/h', 1)}
