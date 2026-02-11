@@ -47,6 +47,87 @@ td:first-child, th:first-child { text-align: center; }
     text-align: center;
 }
 
+.chart-layout {
+    display: flex;
+    align-items: stretch;
+    gap: 12px;
+    width: 100%;
+}
+
+#statsPanel {
+    flex: 0 0 170px;
+    min-width: 170px;
+    border: 1px solid #d9d9d9;
+    background: #fafafa;
+    padding: 10px 12px;
+    font-size: 13px;
+}
+
+.stats-title {
+    font-size: 12px;
+    color: #777;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.stats-group {
+    margin-bottom: 10px;
+}
+
+.stats-group:last-child {
+    margin-bottom: 0;
+}
+
+.stats-name {
+    font-weight: bold;
+    margin-bottom: 2px;
+}
+
+.stats-line {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    color: #444;
+}
+
+.stats-line span:first-child {
+    color: #777;
+}
+
+#cursorPanel {
+    flex: 0 0 120px;
+    min-width: 120px;
+    border: 1px solid #d9d9d9;
+    background: #fafafa;
+    padding: 10px 8px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 14px;
+}
+
+.cursor-item {
+    text-align: center;
+}
+
+.cursor-value {
+    font-size: 36px;
+    line-height: 1;
+    color: #333;
+}
+
+.cursor-unit {
+    margin-top: 4px;
+    font-size: 18px;
+    color: #888;
+}
+
+.cursor-empty {
+    text-align: center;
+    color: #777;
+    font-size: 12px;
+}
 
 .lap-segment {
     position: absolute;
@@ -54,6 +135,7 @@ td:first-child, th:first-child { text-align: center; }
     bottom: 0;
     background: #d6d6d6;
     cursor: pointer;
+    box-sizing: border-box;
 }
 
 
@@ -64,22 +146,9 @@ td:first-child, th:first-child { text-align: center; }
 
 .chart-wrap {
     position: relative;
+    flex: 1 1 auto;
+    min-width: 0;
     height: 300px;
-}
-
-.lap-segment::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    right: 0;
-    width: 2px;          /* ← 2 px */
-    height: 100%;
-    background: #fff;   /* ← białe */
-}
-
-
-.lap-segment:last-child::after {
-    display: none;
 }
 
 .lap-segment:hover {
@@ -177,7 +246,8 @@ td:first-child, th:first-child { text-align: center; }
 <label><input type="checkbox" id="showPower" checked> Moc</label>
 <label><input type="checkbox" id="showHR" checked> Tętno</label>
 <label><input type="checkbox" id="showSpeed"> Prędkość</label>
-<label><input type="checkbox" id="showCad"> Kadencja</label>
+<label><input type="checkbox" id="showCad" checked> Kadencja</label>
+<label><input type="checkbox" id="showWHR"> W / HR</label>
 <button id="resetZoom">Zeruj przybliżenie</button>
 </div>
 
@@ -186,12 +256,23 @@ td:first-child, th:first-child { text-align: center; }
 <tbody></tbody>
 </table>
 
-<div class="chart-wrap">
-    <canvas id="chart"></canvas>
-    <div id="lapRow">
-        <div id="lapLabel">Laps</div>
-        <div id="lapBar"></div>
+<div class="chart-layout">
+    <aside id="statsPanel">
+        <div class="stats-title">Statystyki</div>
+        <div id="statsContent"></div>
+    </aside>
+
+    <div class="chart-wrap">
+        <canvas id="chart"></canvas>
+        <div id="lapRow">
+            <div id="lapLabel">Laps</div>
+            <div id="lapBar"></div>
+        </div>
     </div>
+
+    <aside id="cursorPanel">
+        <div id="cursorContent" class="cursor-empty">Najedź na wykres</div>
+    </aside>
 </div>
 
 
@@ -217,11 +298,150 @@ function getTimeStep(totalSec){
     return 1800;                       // 30 min
 }
 
+function formatMetricValue(value, unit, digits = 0){
+    if (value == null || Number.isNaN(value)) return '-';
+    return `${value.toFixed(digits)} ${unit}`;
+}
+
+function getPowerHrRatio(point){
+    if (!point || point.power == null || point.hr == null || point.hr <= 0) return null;
+    return point.power / point.hr;
+}
+
+function findNearestPointByTime(t){
+    if (!rawData.length) return null;
+    return rawData.reduce((a, b) =>
+        Math.abs(b.x - t) < Math.abs(a.x - t) ? b : a
+    );
+}
+
+function renderCursorValue(value, unit, digits = 0){
+    if (value == null || Number.isNaN(value)) {
+        return `
+            <div class="cursor-item">
+                <div class="cursor-value">-</div>
+                <div class="cursor-unit">${unit}</div>
+            </div>
+        `;
+    }
+
+    return `
+        <div class="cursor-item">
+            <div class="cursor-value">${value.toFixed(digits)}</div>
+            <div class="cursor-unit">${unit}</div>
+        </div>
+    `;
+}
+
+function updateCursorPanel(point){
+    const container = document.getElementById('cursorContent');
+    if (!container) return;
+
+    if (!point) {
+        container.className = 'cursor-empty';
+        container.textContent = 'Najedź na wykres';
+        return;
+    }
+
+    const parts = [];
+
+    if (show('showSpeed')) parts.push(renderCursorValue(point.speed, 'km/h', 1));
+    if (show('showPower')) parts.push(renderCursorValue(point.power, 'W'));
+    if (show('showHR')) parts.push(renderCursorValue(point.hr, 'bpm'));
+    if (show('showCad')) parts.push(renderCursorValue(point.cad, 'rpm'));
+    if (show('showWHR')) parts.push(renderCursorValue(getPowerHrRatio(point), 'W/HR', 3));
+
+    if (!parts.length) {
+        container.className = 'cursor-empty';
+        container.textContent = 'Brak widocznych serii';
+        return;
+    }
+
+    container.className = '';
+    container.innerHTML = parts.join('');
+}
+
+function getStatsRange(){
+    if (!rawData.length) return null;
+
+    if (selectedLaps?.length === 1) {
+        const lapIndex = selectedLaps[0];
+        const bounds = [...lapMarkers, rawData.at(-1).x];
+        return {
+            start: bounds[lapIndex],
+            end: bounds[lapIndex + 1]
+        };
+    }
+
+    const fullStart = rawData[0].x;
+    const fullEnd = rawData.at(-1).x;
+    if (!chart?.scales?.x) {
+        return { start: fullStart, end: fullEnd };
+    }
+
+    const xScale = chart.scales.x;
+    const start = Math.max(fullStart, xScale.min);
+    const end = Math.min(fullEnd, xScale.max);
+
+    return {
+        start,
+        end
+    };
+}
+
+function calcMetricStats(data, key){
+    const values = data.map(p => p[key]).filter(v => v != null);
+    if (!values.length) return { avg: null, max: null };
+
+    return {
+        avg: avg(values),
+        max: Math.max(...values)
+    };
+}
+
+function updateStatsPanel(){
+    const statsContent = document.getElementById('statsContent');
+    if (!statsContent) return;
+
+    if (!rawData.length) {
+        statsContent.innerHTML = '<div class="stats-line"><span>Dane:</span><span>brak</span></div>';
+        return;
+    }
+
+    const range = getStatsRange();
+    if (!range || range.end <= range.start) {
+        statsContent.innerHTML = '<div class="stats-line"><span>Dane:</span><span>brak</span></div>';
+        return;
+    }
+
+    const scopedData = rawData.filter(p => p.x >= range.start && p.x <= range.end);
+    const power = calcMetricStats(scopedData, 'power');
+    const hr = calcMetricStats(scopedData, 'hr');
+    const speed = calcMetricStats(scopedData, 'speed');
+    const cad = calcMetricStats(scopedData, 'cad');
+
+    const renderGroup = (name, stats, unit, digits = 0) => `
+        <div class="stats-group">
+            <div class="stats-name">${name}</div>
+            <div class="stats-line"><span>Średnia</span><span>${formatMetricValue(stats.avg, unit, digits)}</span></div>
+            <div class="stats-line"><span>Maksymalna</span><span>${formatMetricValue(stats.max, unit, digits)}</span></div>
+        </div>
+    `;
+
+    statsContent.innerHTML = `
+        ${renderGroup('Moc', power, 'W')}
+        ${renderGroup('Tętno', hr, 'bpm')}
+        ${renderGroup('Prędkość', speed, 'km/h', 1)}
+        ${renderGroup('Kadencja', cad, 'rpm')}
+    `;
+}
+
 /* ===================== STATE ===================== */
 let rawData = [];
 let lapMarkers = [];
 let lapSummaries = [];
 let selectedLaps = null;
+let hoveredTime = null;
 
 /* ===================== PLUGINS (BEZ ZMIAN) ===================== */
 const lapLabelsPlugin = {
@@ -241,6 +461,26 @@ const lapLabelsPlugin = {
             if(mid<x.min||mid>x.max) continue;
             ctx.fillText(`Lap ${i+1}`,x.getPixelForValue(mid),chartArea.bottom-4);
         }
+        ctx.restore();
+    }
+};
+
+const cursorGuidePlugin = {
+    id:'cursorGuide',
+    afterDatasetsDraw(chart){
+        if (hoveredTime == null) return;
+        const {ctx, chartArea, scales} = chart;
+        const x = scales.x;
+        if (!x || hoveredTime < x.min || hoveredTime > x.max) return;
+
+        const px = x.getPixelForValue(hoveredTime);
+        ctx.save();
+        ctx.strokeStyle = 'rgba(0,0,0,0.9)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(px, chartArea.top);
+        ctx.lineTo(px, chartArea.bottom);
+        ctx.stroke();
         ctx.restore();
     }
 };
@@ -275,6 +515,24 @@ data:{datasets:[]},
 options:{
 maintainAspectRatio:false,
 interaction:{mode:'nearest',intersect:false},
+onHover(event, active, chartRef){
+    if (!rawData.length) return;
+
+    const {chartArea, scales} = chartRef;
+    const ex = event.x;
+    const ey = event.y;
+
+    if (ex == null || ey == null || ex < chartArea.left || ex > chartArea.right || ey < chartArea.top || ey > chartArea.bottom) {
+        hoveredTime = null;
+        updateCursorPanel(null);
+        chartRef.draw();
+        return;
+    }
+
+    hoveredTime = scales.x.getValueForPixel(ex);
+    updateCursorPanel(findNearestPointByTime(hoveredTime));
+    chartRef.draw();
+},
 
 plugins:{
     legend:{display:false},
@@ -282,12 +540,18 @@ plugins:{
     zoom: {
         drag: { enabled: true },
         mode: 'x',
-        onZoomComplete: () => buildLapBar()
+        onZoomComplete: () => {
+            buildLapBar();
+            updateStatsPanel();
+        }
     },
     pan: {
         enabled: true,
         mode: 'x',
-        onPanComplete: () => buildLapBar()
+        onPanComplete: () => {
+            buildLapBar();
+            updateStatsPanel();
+        }
     }
 },
     tooltip:{
@@ -307,10 +571,7 @@ plugins:{
                 if (!items.length) return [];
                 const t = items[0].parsed.x;
 
-                // znajdź punkt z rawData najbliższy temu czasowi
-                const p = rawData.reduce((a,b)=>
-                    Math.abs(b.x - t) < Math.abs(a.x - t) ? b : a
-                );
+                const p = findNearestPointByTime(t);
 
                 const lines = [];
 
@@ -326,6 +587,11 @@ plugins:{
                 if (show('showCad') && p.cad != null)
                     lines.push(`Kadencja: ${Math.round(p.cad)} rpm`);
 
+                if (show('showWHR')) {
+                    const whr = getPowerHrRatio(p);
+                    if (whr != null) lines.push(`W / HR: ${whr.toFixed(3)}`);
+                }
+
                 return lines;
             }
         }
@@ -336,10 +602,11 @@ plugins:{
 scales:{
 x:{type:'linear',title:{display:true,text:'Czas'},ticks:{callback:v=>formatTime(v)}},
 yPower:{position:'left',title:{display:true,text:'Moc / inne'}},
-yHR:{position:'right',title:{display:true,text:'Tętno [bpm]'},grid:{drawOnChartArea:false}}
+yHR:{position:'right',title:{display:true,text:'Tętno [bpm]'},grid:{drawOnChartArea:false}},
+yWHR:{position:'right',display:false,grid:{drawOnChartArea:false}}
 }
 },
-plugins:[lapHighlightPlugin,lapLabelsPlugin]
+plugins:[lapHighlightPlugin,lapLabelsPlugin,cursorGuidePlugin]
 });
 
 
@@ -347,9 +614,18 @@ plugins:[lapHighlightPlugin,lapLabelsPlugin]
 
 /* ===================== UI ===================== */
 const show=id=>document.getElementById(id).checked;
-document.getElementById('resetZoom').onclick=()=>chart.resetZoom();
+document.getElementById('resetZoom').onclick=() => {
+    chart.resetZoom();
+    buildLapBar();
+    updateStatsPanel();
+};
 document.querySelectorAll('input,select').forEach(e=>e.onchange=redraw);
 document.getElementById('fileInput').onchange=loadTCX;
+document.getElementById('chart').addEventListener('mouseleave', () => {
+    hoveredTime = null;
+    updateCursorPanel(null);
+    chart.draw();
+});
 
 
 let lastClickedLap = null;
@@ -469,13 +745,16 @@ function buildLapBar() {
         const e = Math.min(end,   xScale.max);
         if (e <= s) return;
 
-const x1 = Math.round(xScale.getPixelForValue(s) - leftPx);
-const x2 = Math.round(xScale.getPixelForValue(e) - leftPx);
+        const x1 = xScale.getPixelForValue(s) - leftPx;
+        const x2 = xScale.getPixelForValue(e) - leftPx;
 
         const seg = document.createElement('div');
         seg.className = 'lap-segment';
         seg.style.left = `${x1}px`;
-        seg.style.width = `${Math.max(1, x2 - x1 - 2)}px`; // -2px na separator
+        seg.style.width = `${Math.max(1, x2 - x1)}px`;
+        if (i < bounds.length - 2) {
+            seg.style.borderRight = '2px solid #fff';
+        }
         seg.onclick = evt => handleLapClick(evt, i);
 
         if (selectedLaps?.includes(i)) {
@@ -498,7 +777,10 @@ const x2 = Math.round(xScale.getPixelForValue(e) - leftPx);
 /* ===================== REDRAW ===================== */
 function redraw() {
     chart.data.datasets = [];
-    if (!rawData.length) return;
+    if (!rawData.length) {
+        updateStatsPanel();
+        return;
+    }
 
     // ===================== OŚ CZASU – OKRĄGŁE TICKI =====================
     const totalTime = rawData.at(-1).x;   // sekundy od startu
@@ -567,12 +849,24 @@ function redraw() {
         });
     }
 
+    // ===================== W / HR =====================
+    if (show('showWHR')) {
+        chart.data.datasets.push({
+            data: smoothWHR(rawData, +hrSmooth.value),
+            borderColor: '#7e57c2',
+            borderWidth: 1.6,
+            pointRadius: 0,
+            yAxisID: 'yWHR'
+        });
+    }
+
     // ===================== TABELA =====================
     buildLapTable();
 
     // ===================== UPDATE =====================
     chart.update();
     buildLapBar();
+    updateStatsPanel();
 }
 
 
@@ -583,6 +877,21 @@ let out=[],buf=[];
 for(const p of data){
 if(p[key]==null) continue;
 buf.push(p[key]); if(buf.length>w) buf.shift();
+out.push({x:p.x,y:avg(buf)});
+}
+return out;
+}
+
+function smoothWHR(data,w){
+if(w<=1) return data
+    .map(p=>({x:p.x,y:getPowerHrRatio(p)}))
+    .filter(p=>p.y!=null);
+
+let out=[],buf=[];
+for(const p of data){
+const ratio=getPowerHrRatio(p);
+if(ratio==null) continue;
+buf.push(ratio); if(buf.length>w) buf.shift();
 out.push({x:p.x,y:avg(buf)});
 }
 return out;
@@ -675,7 +984,7 @@ function buildLapTable(){
 
     const visible = selectedLaps === null
         ? lapSummaries.map((_, i) => i)
-        : selectedLaps;
+        : [...selectedLaps].sort((a, b) => a - b);
 
     const bounds = [...lapMarkers, Infinity];
     const laps = [];
@@ -717,9 +1026,9 @@ function buildLapTable(){
             avgHR,
             shiftedAvgHR,
             maxHR: s.maxHR ?? '-',
-            hrw:
-                s.avgPower && avgHR !== '-'
-                    ? (avgHR / s.avgPower).toFixed(3)
+            whr:
+                s.avgPower && avgHR !== '-' && avgHR > 0
+                    ? (s.avgPower / avgHR).toFixed(3)
                     : '-'
         });
     }
@@ -735,7 +1044,7 @@ function buildLapTable(){
         { label: 'Śr. moc [W]', key: 'avgPower' },
         { label: 'Śr. HR [bpm]', key: 'avgHR' },
         { label: `Przesunięte Śr. HR (+${hrShift}s)`, key: 'shiftedAvgHR' },
-        { label: 'HR / W', key: 'hrw' },
+        { label: 'W / HR', key: 'whr' },
         { label: 'Max HR [bpm]', key: 'maxHR' },
         { label: 'Max moc [W]', key: 'maxPower' }
     ];
@@ -754,7 +1063,14 @@ function buildLapTable(){
 window.addEventListener('resize', () => {
     chart.resize();
     buildLapBar();
+    updateStatsPanel();
+    if (hoveredTime != null) {
+        updateCursorPanel(findNearestPointByTime(hoveredTime));
+    }
 });
+
+updateStatsPanel();
+updateCursorPanel(null);
 
 </script>
 
