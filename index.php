@@ -852,9 +852,7 @@ function redraw() {
     // ===================== W / HR =====================
     if (show('showWHR')) {
         chart.data.datasets.push({
-            data: rawData
-                .map(p => ({ x: p.x, y: getPowerHrRatio(p) }))
-                .filter(p => p.y != null),
+            data: smoothWHR(rawData, +hrSmooth.value),
             borderColor: '#7e57c2',
             borderWidth: 1.6,
             pointRadius: 0,
@@ -879,6 +877,21 @@ let out=[],buf=[];
 for(const p of data){
 if(p[key]==null) continue;
 buf.push(p[key]); if(buf.length>w) buf.shift();
+out.push({x:p.x,y:avg(buf)});
+}
+return out;
+}
+
+function smoothWHR(data,w){
+if(w<=1) return data
+    .map(p=>({x:p.x,y:getPowerHrRatio(p)}))
+    .filter(p=>p.y!=null);
+
+let out=[],buf=[];
+for(const p of data){
+const ratio=getPowerHrRatio(p);
+if(ratio==null) continue;
+buf.push(ratio); if(buf.length>w) buf.shift();
 out.push({x:p.x,y:avg(buf)});
 }
 return out;
