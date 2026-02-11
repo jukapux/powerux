@@ -95,6 +95,39 @@ td:first-child, th:first-child { text-align: center; }
     color: #777;
 }
 
+#cursorPanel {
+    flex: 0 0 120px;
+    min-width: 120px;
+    border: 1px solid #d9d9d9;
+    background: #fafafa;
+    padding: 10px 8px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 14px;
+}
+
+.cursor-item {
+    text-align: center;
+}
+
+.cursor-value {
+    font-size: 36px;
+    line-height: 1;
+    color: #333;
+}
+
+.cursor-unit {
+    margin-top: 4px;
+    font-size: 18px;
+    color: #888;
+}
+
+.cursor-empty {
+    text-align: center;
+    color: #777;
+    font-size: 12px;
+}
 
 .lap-segment {
     position: absolute;
@@ -235,6 +268,10 @@ td:first-child, th:first-child { text-align: center; }
             <div id="lapBar"></div>
         </div>
     </div>
+
+    <aside id="cursorPanel">
+        <div id="cursorContent" class="cursor-empty">Najedź na wykres</div>
+    </aside>
 </div>
 
 
@@ -263,6 +300,58 @@ function getTimeStep(totalSec){
 function formatMetricValue(value, unit, digits = 0){
     if (value == null || Number.isNaN(value)) return '-';
     return `${value.toFixed(digits)} ${unit}`;
+}
+
+function findNearestPointByTime(t){
+    if (!rawData.length) return null;
+    return rawData.reduce((a, b) =>
+        Math.abs(b.x - t) < Math.abs(a.x - t) ? b : a
+    );
+}
+
+function renderCursorValue(value, unit, digits = 0){
+    if (value == null || Number.isNaN(value)) {
+        return `
+            <div class="cursor-item">
+                <div class="cursor-value">-</div>
+                <div class="cursor-unit">${unit}</div>
+            </div>
+        `;
+    }
+
+    return `
+        <div class="cursor-item">
+            <div class="cursor-value">${value.toFixed(digits)}</div>
+            <div class="cursor-unit">${unit}</div>
+        </div>
+    `;
+}
+
+function updateCursorPanel(point){
+    const container = document.getElementById('cursorContent');
+    if (!container) return;
+
+    if (!point) {
+        container.className = 'cursor-empty';
+        container.textContent = 'Najedź na wykres';
+        return;
+    }
+
+    const parts = [];
+
+    if (show('showSpeed')) parts.push(renderCursorValue(point.speed, 'km/h', 1));
+    if (show('showPower')) parts.push(renderCursorValue(point.power, 'W'));
+    if (show('showHR')) parts.push(renderCursorValue(point.hr, 'bpm'));
+    if (show('showCad')) parts.push(renderCursorValue(point.cad, 'rpm'));
+
+    if (!parts.length) {
+        container.className = 'cursor-empty';
+        container.textContent = 'Brak widocznych serii';
+        return;
+    }
+
+    container.className = '';
+    container.innerHTML = parts.join('');
 }
 
 function getStatsRange(){
@@ -345,6 +434,7 @@ let rawData = [];
 let lapMarkers = [];
 let lapSummaries = [];
 let selectedLaps = null;
+let hoveredTime = null;
 
 /* ===================== PLUGINS (BEZ ZMIAN) ===================== */
 const lapLabelsPlugin = {
@@ -364,6 +454,26 @@ const lapLabelsPlugin = {
             if(mid<x.min||mid>x.max) continue;
             ctx.fillText(`Lap ${i+1}`,x.getPixelForValue(mid),chartArea.bottom-4);
         }
+        ctx.restore();
+    }
+};
+
+const cursorGuidePlugin = {
+    id:'cursorGuide',
+    afterDatasetsDraw(chart){
+        if (hoveredTime == null) return;
+        const {ctx, chartArea, scales} = chart;
+        const x = scales.x;
+        if (!x || hoveredTime < x.min || hoveredTime > x.max) return;
+
+        const px = x.getPixelForValue(hoveredTime);
+        ctx.save();
+        ctx.strokeStyle = 'rgba(0,0,0,0.9)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(px, chartArea.top);
+        ctx.lineTo(px, chartArea.bottom);
+        ctx.stroke();
         ctx.restore();
     }
 };
@@ -398,6 +508,24 @@ data:{datasets:[]},
 options:{
 maintainAspectRatio:false,
 interaction:{mode:'nearest',intersect:false},
+onHover(event, active, chartRef){
+    if (!rawData.length) return;
+
+    const {chartArea, scales} = chartRef;
+    const ex = event.x;
+    const ey = event.y;
+
+    if (ex == null || ey == null || ex < chartArea.left || ex > chartArea.right || ey < chartArea.top || ey > chartArea.bottom) {
+        hoveredTime = null;
+        updateCursorPanel(null);
+        chartRef.draw();
+        return;
+    }
+
+    hoveredTime = scales.x.getValueForPixel(ex);
+    updateCursorPanel(findNearestPointByTime(hoveredTime));
+    chartRef.draw();
+},
 
 plugins:{
     legend:{display:false},
@@ -436,10 +564,7 @@ plugins:{
                 if (!items.length) return [];
                 const t = items[0].parsed.x;
 
-                // znajdź punkt z rawData najbliższy temu czasowi
-                const p = rawData.reduce((a,b)=>
-                    Math.abs(b.x - t) < Math.abs(a.x - t) ? b : a
-                );
+                const p = findNearestPointByTime(t);
 
                 const lines = [];
 
@@ -468,7 +593,7 @@ yPower:{position:'left',title:{display:true,text:'Moc / inne'}},
 yHR:{position:'right',title:{display:true,text:'Tętno [bpm]'},grid:{drawOnChartArea:false}}
 }
 },
-plugins:[lapHighlightPlugin,lapLabelsPlugin]
+plugins:[lapHighlightPlugin,lapLabelsPlugin,cursorGuidePlugin]
 });
 
 
@@ -483,6 +608,11 @@ document.getElementById('resetZoom').onclick=() => {
 };
 document.querySelectorAll('input,select').forEach(e=>e.onchange=redraw);
 document.getElementById('fileInput').onchange=loadTCX;
+document.getElementById('chart').addEventListener('mouseleave', () => {
+    hoveredTime = null;
+    updateCursorPanel(null);
+    chart.draw();
+});
 
 
 let lastClickedLap = null;
@@ -895,9 +1025,13 @@ window.addEventListener('resize', () => {
     chart.resize();
     buildLapBar();
     updateStatsPanel();
+    if (hoveredTime != null) {
+        updateCursorPanel(findNearestPointByTime(hoveredTime));
+    }
 });
 
 updateStatsPanel();
+updateCursorPanel(null);
 
 </script>
 
