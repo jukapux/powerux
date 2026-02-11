@@ -336,6 +336,10 @@ function updateStatsPanel(){
     `;
 
     statsContent.innerHTML = `
+        <div class="stats-group">
+            <div class="stats-name">Zakres</div>
+            <div class="stats-line"><span>${range.label}</span><span>${formatTime(range.start)}–${formatTime(range.end)}</span></div>
+        </div>
         ${renderGroup('Moc', power, 'W')}
         ${renderGroup('Tętno', hr, 'bpm')}
         ${renderGroup('Prędkość', speed, 'km/h', 1)}
