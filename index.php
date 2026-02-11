@@ -664,7 +664,7 @@ function buildLapTable(){
 
     const visible = selectedLaps === null
         ? lapSummaries.map((_, i) => i)
-        : selectedLaps;
+        : [...selectedLaps].sort((a, b) => a - b);
 
     const bounds = [...lapMarkers, Infinity];
     const laps = [];
