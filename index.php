@@ -54,6 +54,7 @@ td:first-child, th:first-child { text-align: center; }
     bottom: 0;
     background: #d6d6d6;
     cursor: pointer;
+    box-sizing: border-box;
 }
 
 
@@ -65,21 +66,6 @@ td:first-child, th:first-child { text-align: center; }
 .chart-wrap {
     position: relative;
     height: 300px;
-}
-
-.lap-segment::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    right: 0;
-    width: 2px;          /* ← 2 px */
-    height: 100%;
-    background: #fff;   /* ← białe */
-}
-
-
-.lap-segment:last-child::after {
-    display: none;
 }
 
 .lap-segment:hover {
@@ -469,13 +455,16 @@ function buildLapBar() {
         const e = Math.min(end,   xScale.max);
         if (e <= s) return;
 
-const x1 = Math.round(xScale.getPixelForValue(s) - leftPx);
-const x2 = Math.round(xScale.getPixelForValue(e) - leftPx);
+        const x1 = xScale.getPixelForValue(s) - leftPx;
+        const x2 = xScale.getPixelForValue(e) - leftPx;
 
         const seg = document.createElement('div');
         seg.className = 'lap-segment';
         seg.style.left = `${x1}px`;
-        seg.style.width = `${Math.max(1, x2 - x1 - 2)}px`; // -2px na separator
+        seg.style.width = `${Math.max(1, x2 - x1)}px`;
+        if (i < bounds.length - 2) {
+            seg.style.borderRight = '2px solid #fff';
+        }
         seg.onclick = evt => handleLapClick(evt, i);
 
         if (selectedLaps?.includes(i)) {
@@ -675,7 +664,7 @@ function buildLapTable(){
 
     const visible = selectedLaps === null
         ? lapSummaries.map((_, i) => i)
-        : selectedLaps;
+        : [...selectedLaps].sort((a, b) => a - b);
 
     const bounds = [...lapMarkers, Infinity];
     const laps = [];
