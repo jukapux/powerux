@@ -51,9 +51,11 @@ td:first-child, th:first-child { text-align: center; }
     display: flex;
     align-items: stretch;
     gap: 12px;
+    width: 100%;
 }
 
 #statsPanel {
+    flex: 0 0 170px;
     min-width: 170px;
     border: 1px solid #d9d9d9;
     background: #fafafa;
@@ -111,6 +113,8 @@ td:first-child, th:first-child { text-align: center; }
 
 .chart-wrap {
     position: relative;
+    flex: 1 1 auto;
+    min-width: 0;
     height: 300px;
 }
 
