@@ -753,7 +753,8 @@ function buildLapBar() {
         seg.style.left = `${x1}px`;
         seg.style.width = `${Math.max(1, x2 - x1)}px`;
         if (i < bounds.length - 2) {
-            seg.style.borderRight = '2px solid #fff';
+            seg.style.borderLeft = '1px solid #fff';
+            seg.style.borderRight = '1px solid #fff';
         }
         seg.onclick = evt => handleLapClick(evt, i);
 
