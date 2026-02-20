@@ -1,5 +1,5 @@
 #property copyright "PowerUX"
-#property version   "1.00"
+#property version   "1.10"
 #property strict
 
 #include <Trade/Trade.mqh>
@@ -10,25 +10,37 @@ input long     InpMagicNumber                = 3002001;
 input bool     InpEnableLogs                 = true;
 
 input ENUM_TIMEFRAMES InpSignalTimeframe     = PERIOD_M5;
-input int      InpImpulseLookbackBars        = 8;
+input int      InpImpulseLookbackBars        = 6;
 input int      InpATRPeriod                  = 14;
-input double   InpImpulseBodyATRMult         = 0.70;
-input double   InpInitialSL_ATRMult          = 1.20;
-input double   InpTakeProfitR                = 2.20;
-input double   InpMinATRPoints               = 40.0;
-input int      InpMaxTradesPerDay            = 18;
-input int      InpMinMinutesBetweenTrades    = 8;
+input double   InpImpulseBodyATRMult         = 0.55;
+input double   InpImpulseRangeATRMult        = 0.95;
+input double   InpImpulseCloseInRangeMin     = 0.60;
+input double   InpInitialSL_ATRMult          = 1.10;
+input double   InpTakeProfitR                = 1.90;
+input double   InpMinATRPoints               = 30.0;
+input double   InpMaxSpreadPoints            = 35.0;
+input int      InpMaxTradesPerDay            = 14;
+input int      InpMinMinutesBetweenTrades    = 5;
 
 input bool     InpUseRiskPercent             = true;
 input double   InpFixedLot                   = 0.10;
-input double   InpRiskPercentPerTrade        = 0.60;
-input double   InpMaxDailyLossPercent        = 3.0;
-input double   InpMaxDailyLossUSD            = 120.0;
+input double   InpRiskPercentPerTrade        = 0.50;
+input double   InpMaxDailyLossPercent        = 2.8;
+input double   InpMaxDailyLossUSD            = 90.0;
 
-input double   InpBE_TriggerR                = 0.45;
-input double   InpBE_LockR                   = 0.08;
-input double   InpTrailStartR                = 0.85;
-input double   InpTrailATRMult               = 1.10;
+input bool     InpUseTrendFilter             = true;
+input ENUM_TIMEFRAMES InpTrendTimeframe      = PERIOD_M15;
+input int      InpEMAPeriod                  = 50;
+input double   InpMinEmaDistanceATR          = 0.05;
+
+input bool     InpUsePartialClose            = true;
+input double   InpPartialCloseAtR            = 0.90;
+input double   InpPartialClosePercent        = 50.0;
+input double   InpBE_TriggerR                = 0.30;
+input double   InpBE_LockR                   = 0.06;
+input double   InpTrailStartR                = 0.70;
+input double   InpTrailATRMult               = 0.95;
+input int      InpMaxBarsInTrade             = 18;
 
 input int      InpNYOpenHour                 = 9;
 input int      InpNYOpenMinute               = 30;
@@ -37,6 +49,7 @@ input int      InpNYCloseMinute              = 0;
 input int      InpBrokerMinusNY_Hours        = 7;
 
 int atrHandle = INVALID_HANDLE;
+int emaHandle = INVALID_HANDLE;
 datetime lastSignalBarTime = 0;
 datetime lastTradeTime = 0;
 
@@ -57,7 +70,17 @@ int OnInit()
       return(INIT_FAILED);
    }
 
-   Log("EA zainicjalizowany poprawnie.");
+   if(InpUseTrendFilter)
+   {
+      emaHandle = iMA(_Symbol, InpTrendTimeframe, InpEMAPeriod, 0, MODE_EMA, PRICE_CLOSE);
+      if(emaHandle == INVALID_HANDLE)
+      {
+         Print("Nie mogę utworzyć EMA handle.");
+         return(INIT_FAILED);
+      }
+   }
+
+   Log("EA v1.10 zainicjalizowany poprawnie.");
    return(INIT_SUCCEEDED);
 }
 
@@ -65,6 +88,8 @@ void OnDeinit(const int reason)
 {
    if(atrHandle != INVALID_HANDLE)
       IndicatorRelease(atrHandle);
+   if(emaHandle != INVALID_HANDLE)
+      IndicatorRelease(emaHandle);
 }
 
 void OnTick()
@@ -86,12 +111,14 @@ void OnTick()
    if((TimeCurrent() - lastTradeTime) < InpMinMinutesBetweenTrades * 60)
       return;
 
+   if(GetSpreadPoints() > InpMaxSpreadPoints)
+      return;
+
    datetime signalBar = GetCurrentSignalBarTime();
    if(signalBar == 0 || signalBar == lastSignalBarTime)
       return;
 
    lastSignalBarTime = signalBar;
-
    TryOpenTrade();
 }
 
@@ -208,32 +235,68 @@ datetime GetBrokerDayStart()
    return StructToTime(t);
 }
 
-void TryOpenTrade()
+double GetSpreadPoints()
+{
+   double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   if(ask <= 0 || bid <= 0)
+      return 9999.0;
+   return (ask - bid) / _Point;
+}
+
+bool GetAtr(double &atrValue, int shift=1)
+{
+   double atrBuf[];
+   if(CopyBuffer(atrHandle, 0, shift, 1, atrBuf) != 1)
+      return false;
+   atrValue = atrBuf[0];
+   return atrValue > 0.0;
+}
+
+bool PassTrendFilter(bool isBuy, double atr)
+{
+   if(!InpUseTrendFilter)
+      return true;
+
+   MqlRates tr[];
+   if(CopyRates(_Symbol, InpTrendTimeframe, 1, 1, tr) < 1)
+      return false;
+
+   double emaBuf[];
+   if(CopyBuffer(emaHandle, 0, 1, 1, emaBuf) != 1)
+      return false;
+
+   double closePrice = tr[0].close;
+   double ema = emaBuf[0];
+   double minDist = atr * InpMinEmaDistanceATR;
+
+   if(isBuy)
+      return (closePrice > ema + minDist);
+
+   return (closePrice < ema - minDist);
+}
+
+int DetectImpulseSignal(double atr)
 {
    MqlRates rates[];
    int needBars = MathMax(InpImpulseLookbackBars + 2, 20);
    if(CopyRates(_Symbol, InpSignalTimeframe, 1, needBars, rates) < needBars)
-   {
-      Log("Brak wystarczających danych świec.");
-      return;
-   }
-
-   double atrBuf[];
-   if(CopyBuffer(atrHandle, 0, 1, 3, atrBuf) < 3)
-   {
-      Log("Brak danych ATR.");
-      return;
-   }
-
-   double atr = atrBuf[0];
-   if((atr / _Point) < InpMinATRPoints)
-   {
-      Log("ATR za niski, pomijam sygnał.");
-      return;
-   }
+      return 0;
 
    MqlRates c1 = rates[0];
    double body = MathAbs(c1.close - c1.open);
+   double range = c1.high - c1.low;
+
+   if(range <= 0.0)
+      return 0;
+
+   if(body < atr * InpImpulseBodyATRMult)
+      return 0;
+
+   if(range < atr * InpImpulseRangeATRMult)
+      return 0;
+
+   double closePos = (c1.close - c1.low) / range;
 
    double highest = rates[1].high;
    double lowest = rates[1].low;
@@ -243,22 +306,43 @@ void TryOpenTrade()
       lowest = MathMin(lowest, rates[i].low);
    }
 
-   bool bullishImpulse = (c1.close > c1.open) && (c1.close > highest) && (body >= atr * InpImpulseBodyATRMult);
-   bool bearishImpulse = (c1.close < c1.open) && (c1.close < lowest) && (body >= atr * InpImpulseBodyATRMult);
+   bool bullishImpulse = (c1.close > c1.open) && (c1.close > highest) && (closePos >= InpImpulseCloseInRangeMin);
+   bool bearishImpulse = (c1.close < c1.open) && (c1.close < lowest) && ((1.0 - closePos) >= InpImpulseCloseInRangeMin);
 
-   if(!bullishImpulse && !bearishImpulse)
+   if(bullishImpulse)
+      return 1;
+   if(bearishImpulse)
+      return -1;
+
+   return 0;
+}
+
+void TryOpenTrade()
+{
+   double atr = 0.0;
+   if(!GetAtr(atr, 1))
    {
-      Log("Brak impulsu wejściowego.");
+      Log("Brak danych ATR.");
       return;
    }
 
-   bool isBuy = bullishImpulse;
+   if((atr / _Point) < InpMinATRPoints)
+      return;
+
+   int signal = DetectImpulseSignal(atr);
+   if(signal == 0)
+      return;
+
+   bool isBuy = (signal > 0);
+   if(!PassTrendFilter(isBuy, atr))
+      return;
+
    double price = isBuy ? SymbolInfoDouble(_Symbol, SYMBOL_ASK) : SymbolInfoDouble(_Symbol, SYMBOL_BID);
    double slDistance = atr * InpInitialSL_ATRMult;
-   double sl = isBuy ? price - slDistance : price + slDistance;
+   double sl = isBuy ? (price - slDistance) : (price + slDistance);
 
    double tpDistance = slDistance * InpTakeProfitR;
-   double tp = isBuy ? price + tpDistance : price - tpDistance;
+   double tp = isBuy ? (price + tpDistance) : (price - tpDistance);
 
    double lot = CalculateLotSize(price, sl);
    if(lot <= 0.0)
@@ -267,7 +351,7 @@ void TryOpenTrade()
       return;
    }
 
-   string cmt = BuildComment(slDistance / _Point);
+   string cmt = BuildComment(slDistance / _Point, lot);
    trade.SetDeviationInPoints(20);
    bool ok = isBuy ? trade.Buy(lot, _Symbol, price, sl, tp, cmt)
                    : trade.Sell(lot, _Symbol, price, sl, tp, cmt);
@@ -275,7 +359,7 @@ void TryOpenTrade()
    if(ok)
    {
       lastTradeTime = TimeCurrent();
-      Log(StringFormat("OPEN %s lot=%.2f price=%.2f sl=%.2f tp=%.2f", isBuy ? "BUY" : "SELL", lot, price, sl, tp));
+      Log(StringFormat("OPEN %s lot=%.2f spread=%.1f sl=%.2f tp=%.2f", isBuy ? "BUY" : "SELL", lot, GetSpreadPoints(), sl, tp));
    }
    else
    {
@@ -326,22 +410,28 @@ double NormalizeVolume(double vol)
    return NormalizeDouble(vol, digits);
 }
 
-string BuildComment(double riskPoints)
+string BuildComment(double riskPoints, double initLot)
 {
    int rp = (int)MathRound(riskPoints);
-   return StringFormat("IG:%d", rp);
+   int v = (int)MathRound(initLot * 100.0);
+   return StringFormat("IG:%d:%d", rp, v);
 }
 
-int ParseRiskPoints(string cmt)
+void ParseComment(string cmt, int &riskPoints, double &initLot)
 {
-   if(StringLen(cmt) < 4)
-      return 0;
+   riskPoints = 0;
+   initLot = 0.0;
 
-   if(StringSubstr(cmt, 0, 3) != "IG:")
-      return 0;
+   string parts[];
+   int n = StringSplit(cmt, ':', parts);
+   if(n < 3)
+      return;
 
-   string v = StringSubstr(cmt, 3);
-   return (int)StringToInteger(v);
+   if(parts[0] != "IG")
+      return;
+
+   riskPoints = (int)StringToInteger(parts[1]);
+   initLot = (double)StringToInteger(parts[2]) / 100.0;
 }
 
 void ManageOpenPosition()
@@ -353,9 +443,14 @@ void ManageOpenPosition()
    double open = PositionGetDouble(POSITION_PRICE_OPEN);
    double sl = PositionGetDouble(POSITION_SL);
    double tp = PositionGetDouble(POSITION_TP);
+   double vol = PositionGetDouble(POSITION_VOLUME);
    string cmt = PositionGetString(POSITION_COMMENT);
+   datetime openTime = (datetime)PositionGetInteger(POSITION_TIME);
 
-   int riskPoints = ParseRiskPoints(cmt);
+   int riskPoints = 0;
+   double initLot = 0.0;
+   ParseComment(cmt, riskPoints, initLot);
+
    if(riskPoints <= 0)
       return;
 
@@ -369,6 +464,16 @@ void ManageOpenPosition()
 
    double profitMove = (type == POSITION_TYPE_BUY) ? (current - open) : (open - current);
    double r = profitMove / riskPrice;
+
+   if(InpUsePartialClose && initLot > 0.0 && r >= InpPartialCloseAtR)
+      TryPartialClose(vol, initLot);
+
+   if(InpMaxBarsInTrade > 0 && IsTradeStale(openTime, type))
+   {
+      if(trade.PositionClose(_Symbol))
+         Log("Zamknięcie czasowe pozycji (brak follow-through).");
+      return;
+   }
 
    double newSL = sl;
 
@@ -387,10 +492,9 @@ void ManageOpenPosition()
 
    if(r >= InpTrailStartR)
    {
-      double atrBuf[];
-      if(CopyBuffer(atrHandle, 0, 0, 1, atrBuf) == 1)
+      double atr = 0.0;
+      if(GetAtr(atr, 0))
       {
-         double atr = atrBuf[0];
          double trailDist = atr * InpTrailATRMult;
          double trailSL = (type == POSITION_TYPE_BUY) ? (current - trailDist) : (current + trailDist);
 
@@ -416,4 +520,41 @@ void ManageOpenPosition()
       else
          Log(StringFormat("Błąd modyfikacji SL: %d", GetLastError()));
    }
+}
+
+void TryPartialClose(double currentVolume, double initLot)
+{
+   double step = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
+   if(step <= 0.0)
+      return;
+
+   // Jeśli już częściowo zamknięta (wolumen istotnie mniejszy od startowego), nie rób ponownie.
+   if(currentVolume <= initLot * 0.75)
+      return;
+
+   double closeVol = initLot * (InpPartialClosePercent / 100.0);
+   closeVol = NormalizeVolume(closeVol);
+
+   if(closeVol <= 0.0 || closeVol >= currentVolume)
+      return;
+
+   if(trade.PositionClosePartial(_Symbol, closeVol))
+      Log(StringFormat("Partial close: %.2f lot at volume %.2f", closeVol, currentVolume));
+   else
+      Log(StringFormat("Błąd partial close: %d", GetLastError()));
+}
+
+bool IsTradeStale(datetime openTime, long type)
+{
+   int barsPassed = iBarShift(_Symbol, InpSignalTimeframe, openTime, false);
+   if(barsPassed < InpMaxBarsInTrade)
+      return false;
+
+   double open = PositionGetDouble(POSITION_PRICE_OPEN);
+   double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   double current = (type == POSITION_TYPE_BUY) ? bid : ask;
+
+   double move = (type == POSITION_TYPE_BUY) ? (current - open) : (open - current);
+   return (move <= 0.15 * _Point);
 }

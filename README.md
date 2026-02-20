@@ -1,59 +1,97 @@
 # US30 Impulse Guardian (MQL5)
 
-Expert Advisor dla MetaTrader 5 zaprojektowany pod US30, z naciskiem na:
-- kontrolę ryzyka dla małego konta (np. 2000 USD),
-- handel tylko podczas sesji NY,
-- 1 pozycję naraz,
+Ulepszony Expert Advisor pod US30 z naciskiem na:
+- bezpieczeństwo dla konta ~2000 USD,
+- aktywny intraday trading (kilka/kilkanaście wejść dziennie po optymalizacji),
 - szybkie zabezpieczanie zysku,
-- możliwość strojenia w Strategy Tester.
+- pełną konfigurowalność w Strategy Tester.
 
 ## Plik
 - `US30_ImpulseGuardian.mq5`
 
-## Jak działa strategia (skrót)
-1. Szuka impulsu na zamkniętej świecy (`InpSignalTimeframe`):
-   - świeca wybija maksimum/minimum z `InpImpulseLookbackBars`,
-   - korpus świecy ma minimum `InpImpulseBodyATRMult * ATR`.
-2. Stop Loss ustawiany jako `InpInitialSL_ATRMult * ATR`.
-3. Take Profit ustawiany jako wielokrotność ryzyka (`InpTakeProfitR`).
-4. Zarządzanie pozycją:
-   - szybkie przesunięcie SL na BE+ (`InpBE_TriggerR`, `InpBE_LockR`),
-   - potem trailing oparty o ATR (`InpTrailStartR`, `InpTrailATRMult`).
+## Co zostało ulepszone po pierwszych wynikach testera
+1. **Lepsza definicja impulsu**
+   - wybicie high/low z lookback,
+   - minimalny korpus względem ATR,
+   - minimalny range świecy względem ATR,
+   - zamknięcie świecy blisko ekstremum (jakość momentum).
+2. **Filtr trendu (opcjonalny)**
+   - EMA na wyższym TF (domyślnie M15),
+   - wymagany minimalny dystans ceny od EMA (w ATR).
+3. **Filtr spreadu**
+   - brak wejścia przy zbyt wysokim spreadzie.
+4. **Lepsze zarządzanie pozycją**
+   - szybki BE+,
+   - trailing ATR,
+   - częściowa realizacja zysku (partial close),
+   - wyjście czasowe dla „martwych” pozycji.
 
-## Najważniejsze parametry
-- **Money management**
-  - `InpUseRiskPercent` (true = % kapitału, false = stały lot)
+## Główne parametry
+- **Sygnał impulsowy**
+  - `InpImpulseLookbackBars`
+  - `InpImpulseBodyATRMult`
+  - `InpImpulseRangeATRMult`
+  - `InpImpulseCloseInRangeMin`
+- **Ryzyko i limity**
+  - `InpUseRiskPercent` / `InpFixedLot`
   - `InpRiskPercentPerTrade`
-  - `InpFixedLot`
-- **Bezpieczeństwo dzienne**
   - `InpMaxDailyLossPercent`
   - `InpMaxDailyLossUSD`
-- **Aktywność intraday**
+- **Aktywność i koszty**
   - `InpMaxTradesPerDay`
   - `InpMinMinutesBetweenTrades`
+  - `InpMaxSpreadPoints`
+- **Trend filter**
+  - `InpUseTrendFilter`
+  - `InpTrendTimeframe`
+  - `InpEMAPeriod`
+  - `InpMinEmaDistanceATR`
+- **Wyjścia / ochrona zysku**
+  - `InpUsePartialClose`
+  - `InpPartialCloseAtR`
+  - `InpPartialClosePercent`
+  - `InpBE_TriggerR`
+  - `InpBE_LockR`
+  - `InpTrailStartR`
+  - `InpTrailATRMult`
+  - `InpMaxBarsInTrade`
 - **Sesja NY**
-  - `InpNYOpenHour/Minute`
-  - `InpNYCloseHour/Minute`
-  - `InpBrokerMinusNY_Hours` (różnica czasu brokera względem NY)
+  - `InpNYOpenHour/Minute`, `InpNYCloseHour/Minute`
+  - `InpBrokerMinusNY_Hours`
 - **Logi**
   - `InpEnableLogs`
 
-## Wskazówki startowe dla konta 2000 USD
+## Proponowany start dla konta 2000 USD
 - `InpUseRiskPercent = true`
-- `InpRiskPercentPerTrade = 0.4 - 0.8`
-- `InpMaxDailyLossPercent = 2.5 - 3.5`
-- `InpMaxDailyLossUSD = 80 - 130`
-- `InpBE_TriggerR = 0.35 - 0.55`
-- `InpBE_LockR = 0.05 - 0.15`
+- `InpRiskPercentPerTrade = 0.35 - 0.60`
+- `InpMaxDailyLossPercent = 2.0 - 3.0`
+- `InpMaxDailyLossUSD = 70 - 100`
+- `InpMaxSpreadPoints = 20 - 40` (zależnie od brokera)
+- `InpPartialCloseAtR = 0.8 - 1.2`
+- `InpBE_TriggerR = 0.25 - 0.40`
+
+## Jak stroić po Twoim raporcie (PF 1.14, 75 transakcji)
+1. Żeby zwiększyć liczbę transakcji:
+   - obniż `InpImpulseBodyATRMult` i/lub `InpImpulseRangeATRMult`,
+   - skróć `InpImpulseLookbackBars`,
+   - zmniejsz `InpMinMinutesBetweenTrades`.
+2. Żeby podnieść PF:
+   - podnieś `InpImpulseCloseInRangeMin`,
+   - włącz filtr trendu (`InpUseTrendFilter = true`),
+   - zacieśnij `InpMaxSpreadPoints`.
+3. Żeby zmniejszyć DD:
+   - obniż `InpRiskPercentPerTrade`,
+   - zwiększ agresywność BE (`InpBE_TriggerR` niżej),
+   - skróć `InpMaxBarsInTrade`.
 
 ## Strategy Tester
-EA ma wszystkie kluczowe parametry jako `input`, więc nadaje się do:
+EA jest przygotowany do:
 - testów historycznych,
-- optymalizacji,
-- walk-forward (manualnie przez zakresy dat).
+- optymalizacji parametrów,
+- walk-forward (manualnie na różnych zakresach dat).
 
 ## Uwaga
-Przed live tradingiem przetestuj na demie i sprawdź:
-- realny spread/prowizję brokera,
-- poprawną wartość `InpBrokerMinusNY_Hours`,
-- specyfikację instrumentu US30 (tick size/tick value).
+Przed live tradingiem obowiązkowo:
+- przetestuj na demie,
+- sprawdź poprawny offset `InpBrokerMinusNY_Hours`,
+- zweryfikuj specyfikację US30 u brokera (tick value/tick size, minimalny lot, spread).
